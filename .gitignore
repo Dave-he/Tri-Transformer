@@ -42,7 +42,6 @@ backend/checkpoints/
 
 # JS / Node
 node_modules/
-dist/
 .pnp
 .pnp.js
 
@@ -68,3 +67,79 @@ logs/
 # Misc
 *.bak
 *.tmp
+
+# AI Flow 规划中间文件（持久化辅助，无需提交）
+docs/tasks/*/task_plan.md
+docs/tasks/*/progress.md
+docs/tasks/*/findings.md
+
+# Eval 运行时生成数据（GT 数据集、评估报告）
+eval/data/
+
+# Test / Coverage
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+coverage.xml
+*.lcov
+
+# Env / Secrets
+.env
+.env.*
+!.env.example
+
+# Database / Vector store
+backend/tritransformer.db
+backend/chroma_db/
+*.db
+*.sqlite3
+
+# Model checkpoints
+backend/checkpoints/
+*.pt
+*.pth
+*.ckpt
+*.safetensors
+
+# JS / Node
+node_modules/
+.pnp
+.pnp.js
+
+# Build output
+frontend/dist/
+frontend/build/
+dist/
+build/
+
+# IDE / OS
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Logs
+*.log
+logs/
+
+# Docker
+.docker/
+
+# Misc
+*.bak
+*.tmp
+
+# AI-flow local planning files (working memory, not source)
+docs/tasks/**/task_plan.md
+docs/tasks/**/findings.md
+docs/tasks/**/progress.md
+docs/tasks/**/requirement-raw.md
+
+# Eval ground truth versions (generated data)
+eval/data/gt_versions/
+
+# MSW service worker (generated at runtime)
+frontend/public/mockServiceWorker.js
