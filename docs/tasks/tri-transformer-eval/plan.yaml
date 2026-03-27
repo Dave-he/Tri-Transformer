@@ -1,0 +1,294 @@
+plan:
+  meta:
+    task_id: tri-transformer-eval
+    source_tech_doc: "docs/tasks/tri-transformer-eval/tech-solution.yaml"
+    scope: "P0|P1"
+    test_coverage_target: 90
+    min_tests_per_feature: 3
+    platform: python
+    created_at: "2026-03-27"
+
+  tasks:
+    # ============ P0 测试任务：先写测试 (RED) ============
+
+    - id: T0-1
+      priority: P0
+      type: test
+      title: "RAGLoss 单元测试"
+      test_type: pure
+      file: "eval/tests/test_rag_loss.py"
+      given: "给定一组查询向量、检索结果排序和 Ground Truth 相关文档列表"
+      when: "调用 RAGLoss.forward() 计算各子损失"
+      then:
+        - "Recall@1/3/5/10 计算结果在 [0,1] 范围内且符合数学定义"
+        - "perfect retrieval → loss=0，zero retrieval → loss=1"
+        - "NDCG 排序一致性：完美排序 > 随机排序 > 逆序排序"
+        - "backward() 不报错，gradient norm > 0（可微分验证）"
+        - "权重 α/β/γ 配置生效：L_total = α*L_recall + β*L_coverage + γ*L_ndcg"
+      depends_on: []
+
+    - id: T0-2
+      priority: P0
+      type: test
+      title: "ControlAlignmentLoss 单元测试"
+      test_type: pure
+      file: "eval/tests/test_control_alignment_loss.py"
+      given: "给定控制信号向量、遵循控制的正样本生成和违反控制的负样本生成"
+      when: "调用 ControlAlignmentLoss.forward() 计算各子损失"
+      then:
+        - "正样本相似度 > 负样本相似度（ContrastiveControlLoss 方向正确）"
+        - "知识蕴含对 → L_nli < 0.1；知识矛盾对 → L_nli > 0.5"
+        - "遵循指令 → L_inst 分类得分 > 0.8；违反 → < 0.3"
+        - "权重 λ₁/λ₂/λ₃ 配置有效，总损失随权重线性变化"
+      depends_on: []
+
+    - id: T0-3
+      priority: P0
+      type: test
+      title: "HallucinationLoss 单元测试"
+      test_type: pure
+      file: "eval/tests/test_hallucination_loss.py"
+      given: "给定含事实的生成文本（有/无知识库支撑）、知识来源文档列表"
+      when: "调用 HallucinationLoss.forward() 计算各子损失"
+      then:
+        - "有知识库支撑的事实 → L_fact < 0.2；无支撑的编造事实 → L_fact > 0.6"
+        - "能追溯来源 → L_attr 低；不能追溯 → L_attr 高（差异 > 0.3）"
+        - "知识缺失时拒答 → L_abstain 低；强行生成 → L_abstain 高"
+        - "幻觉率（Hallucination Rate）聚合指标在 [0,1] 范围内"
+      depends_on: []
+
+    - id: T0-4
+      priority: P0
+      type: test
+      title: "GroundTruthEngine 测试"
+      test_type: pure
+      file: "eval/tests/test_ground_truth_engine.py"
+      given: "给定 5 个文档块（每块约 500 字），包含明确事实陈述"
+      when: "运行 GroundTruthEngine 完整流程"
+      then:
+        - "DocumentQAGenerator 生成 ≥ 25 个 QA 对（每 1000 字 ≥ 5 对）"
+        - "DualModelValidator 正确识别高相似度共识对（≥ 0.85）"
+        - "KGTripleExtractor 提取 ≥ 10 个 (S,P,O) Triple，格式正确"
+        - "ConsistencyChecker 过滤矛盾样本，最终保留比例 ≥ 70%"
+        - "GTFusionEngine 输出包含 difficulty 和 quality_score 字段"
+        - "导出的 JSON Lines 文件符合 GroundTruthItem Schema"
+        - "版本号在增量更新后正确递增"
+      depends_on: []
+
+    - id: T0-5
+      priority: P0
+      type: test
+      title: "EvalPipeline 集成测试"
+      test_type: pure
+      file: "eval/tests/test_eval_pipeline.py"
+      given: "给定 20 条 Ground Truth 样本和对应的模型生成结果"
+      when: "运行 EvalPipeline 完整流程"
+      then:
+        - "RAGEvaluator 输出 faithfulness/answer_relevancy/context_recall 均在 [0,1]"
+        - "GenerationEvaluator 输出 BLEU/ROUGE/BERTScore 数值合理（不全为0或1）"
+        - "HallucinationEvaluator 幻觉率计算正确（mock 数据验证）"
+        - "CIGate: 满足全部阈值 → exit code 0"
+        - "CIGate: Hallucination Rate=0.10 → exit code 1 + 详细失败原因"
+        - "报告文件输出：eval_report.json 和 eval_report.md 均存在"
+        - "Bootstrap 置信区间：每个指标包含 ci_lower 和 ci_upper 字段"
+      depends_on: []
+
+    # ============ P0 代码任务：实现（GREEN）============
+
+    - id: P0-1
+      priority: P0
+      type: code
+      title: "项目初始化：目录结构、依赖配置"
+      files:
+        - "eval/requirements.txt"
+        - "eval/pyproject.toml"
+        - "eval/config.yaml"
+        - "eval/__init__.py"
+        - "eval/loss/__init__.py"
+        - "eval/ground_truth/__init__.py"
+        - "eval/pipeline/__init__.py"
+        - "eval/scripts/__init__.py"
+        - "eval/tests/__init__.py"
+      depends_on: []
+      definition_of_done:
+        - "requirements.txt 包含 ragas/deepeval/evaluate/bert-score/rouge-score/torch/sentence-transformers/spacy"
+        - "pyproject.toml 配置 pytest + asyncio_mode=auto"
+        - "config.yaml 包含模型路径/损失权重/CI Gate 阈值"
+        - "pytest eval/tests/ 可正常发现测试文件"
+
+    - id: P0-2
+      priority: P0
+      type: code
+      title: "实现 RAGLoss 目标函数"
+      files:
+        - "eval/loss/base.py"
+        - "eval/loss/rag_loss.py"
+      depends_on:
+        - T0-1
+        - P0-1
+      definition_of_done:
+        - "BaseLoss 抽象基类：forward()/compute()/get_metrics() 接口"
+        - "RetrievalRelevanceLoss：Recall@K（K=1,3,5,10）soft 可微分实现"
+        - "CoverageLoss：F1-Token Overlap + BERTScore 混合"
+        - "RankingConsistencyLoss：ApproxNDCG + MRR"
+        - "RAGLoss 加权合并：α·L_recall + β·L_coverage + γ·L_ndcg"
+        - "所有 T0-1 测试通过（pytest eval/tests/test_rag_loss.py）"
+
+    - id: P0-3
+      priority: P0
+      type: code
+      title: "实现 ControlAlignmentLoss 目标函数"
+      files:
+        - "eval/loss/control_alignment_loss.py"
+      depends_on:
+        - T0-2
+        - P0-2
+      definition_of_done:
+        - "ContrastiveControlLoss：InfoNCE 损失，正负样本对输入"
+        - "KnowledgeConsistencyLoss：加载 cross-encoder/nli-deberta-v3-base，蕴含→低损失"
+        - "InstructionFollowingLoss：分类头 BCE + 回归头 MSE"
+        - "ControlAlignmentLoss 加权合并：λ₁/λ₂/λ₃ 可配置"
+        - "所有 T0-2 测试通过"
+
+    - id: P0-4
+      priority: P0
+      type: code
+      title: "实现 HallucinationLoss 目标函数"
+      files:
+        - "eval/loss/hallucination_loss.py"
+        - "eval/loss/total_loss.py"
+      depends_on:
+        - T0-3
+        - P0-3
+      definition_of_done:
+        - "FactualHallucinationLoss：FactScore 方法，原子事实逐一验证"
+        - "SourceAttributionLoss：Attention Weight 分析片段归因"
+        - "AbstentionCalibrationLoss：置信度阈值 BCE"
+        - "HallucinationLoss 加权合并：μ₁/μ₂/μ₃ 可配置"
+        - "TotalLoss：合并三类损失，w1/w2/w3 权重，梯度流验证"
+        - "所有 T0-3 测试通过"
+
+    - id: P0-5
+      priority: P0
+      type: code
+      title: "实现 GroundTruth Schema 与 GT 构建引擎"
+      files:
+        - "eval/ground_truth/schema.py"
+        - "eval/ground_truth/document_qa_generator.py"
+        - "eval/ground_truth/dual_model_validator.py"
+        - "eval/ground_truth/kg_triple_extractor.py"
+        - "eval/ground_truth/consistency_checker.py"
+        - "eval/ground_truth/fusion_engine.py"
+        - "eval/ground_truth/gt_versioning.py"
+      depends_on:
+        - T0-4
+        - P0-1
+      definition_of_done:
+        - "GroundTruthItem/GroundTruthDataset Pydantic Schema 定义完整"
+        - "DocumentQAGenerator：LLM 生成 QA，覆盖率 ≥ 5 对/1000 字"
+        - "DualModelValidator：双模型共识，BGE 相似度 ≥ 0.85 → Gold"
+        - "KGTripleExtractor：spaCy + RE，中英双语支持"
+        - "ConsistencyChecker：NLI 验证自洽性，矛盾过滤"
+        - "GTFusionEngine：来源权重 + 难度分级 + 质量打分"
+        - "GTVersioning：哈希版本号，增量更新，历史回溯"
+        - "所有 T0-4 测试通过"
+
+    - id: P0-6
+      priority: P0
+      type: code
+      title: "实现 Evaluation Pipeline"
+      files:
+        - "eval/pipeline/rag_evaluator.py"
+        - "eval/pipeline/generation_evaluator.py"
+        - "eval/pipeline/control_evaluator.py"
+        - "eval/pipeline/hallucination_evaluator.py"
+        - "eval/pipeline/dialog_evaluator.py"
+        - "eval/pipeline/eval_pipeline.py"
+        - "eval/pipeline/ci_gate.py"
+        - "eval/pipeline/report_generator.py"
+      depends_on:
+        - T0-5
+        - P0-5
+      definition_of_done:
+        - "RAGEvaluator：封装 RAGAS，输出 faithfulness/answer_relevancy/context_recall"
+        - "GenerationEvaluator：BLEU-4/ROUGE-L/BERTScore F1/METEOR（HF evaluate）"
+        - "ControlEvaluator：指令遵循率 + 主题一致性（BGE 相似度）"
+        - "HallucinationEvaluator：FactScore + 知识覆盖率 + 来源追溯率"
+        - "DialogCohesionEvaluator：多轮一致性 + 上下文保持率"
+        - "EvalPipeline：串联所有 Evaluator + Bootstrap CI（n=1000）"
+        - "CIGate：阈值判定，exit 0/1，详细失败原因输出"
+        - "ReportGenerator：JSON + Markdown 双格式报告"
+        - "所有 T0-5 测试通过"
+
+    - id: P0-7
+      priority: P0
+      type: code
+      title: "实现一键运行脚本"
+      files:
+        - "eval/scripts/build_ground_truth.py"
+        - "eval/scripts/run_eval.py"
+        - "eval/scripts/ci_check.py"
+      depends_on:
+        - P0-5
+        - P0-6
+      definition_of_done:
+        - "build_ground_truth.py：CLI 参数 --docs_dir/--output_dir/--num_samples"
+        - "run_eval.py：--mode (single/batch/dataset) / --gt_file / --output_dir"
+        - "ci_check.py：读取最新报告，exit 0（PASS）/ exit 1（FAIL）"
+        - "python eval/scripts/ci_check.py 可直接在 GitHub Actions 中调用"
+
+    # ============ P1 任务 ============
+
+    - id: P1-1
+      priority: P1
+      type: code
+      title: "Docker 容器化部署"
+      files:
+        - "eval/docker/Dockerfile"
+        - "eval/docker/docker-compose.yml"
+      depends_on:
+        - P0-7
+      definition_of_done:
+        - "Dockerfile 基于 python:3.10-slim，CPU 版 PyTorch"
+        - "docker-compose.yml 挂载 docs/ 和 eval/data/ 目录"
+        - "docker compose up 后 eval pipeline 正常运行"
+
+    - id: P1-2
+      priority: P1
+      type: code
+      title: "GitHub Actions CI 集成"
+      files:
+        - ".github/workflows/eval-ci.yml"
+      depends_on:
+        - P0-7
+      definition_of_done:
+        - "训练完成后自动触发 eval-ci workflow"
+        - "CI Gate 失败时 PR 被阻断"
+        - "评估报告作为 artifact 上传"
+
+  commands:
+    test: "pytest eval/tests/ -v --tb=short"
+    lint: "black --check eval/ && flake8 eval/ --max-line-length 120"
+    typecheck: ""
+
+  acceptance:
+    - id: AC-01
+      description: "GT 自动构建：5个文档块 → ≥ 25 条 GT"
+      command: "pytest eval/tests/test_ground_truth_engine.py -v"
+    - id: AC-02
+      description: "RAGLoss 可微分，梯度 norm > 0"
+      command: "pytest eval/tests/test_rag_loss.py::test_rag_loss_differentiable -v"
+    - id: AC-03
+      description: "CI Gate 逻辑正确（pass/fail 两种路径）"
+      command: "pytest eval/tests/test_eval_pipeline.py -k 'ci_gate' -v"
+    - id: AC-04
+      description: "全量测试通过，覆盖率 ≥ 90%"
+      command: "pytest eval/tests/ -v --cov=eval --cov-report=term-missing"
+
+  rollback:
+    - "eval/ 目录为全新模块，不影响现有 backend/ 和 frontend/"
+    - "回滚方式：删除 eval/ 目录即可，无数据库 migration"
+
+  monitoring:
+    - "CI Gate 结果记录到 eval/data/eval_history.jsonl"
+    - "指标趋势通过 ReportGenerator 的 Markdown 报告可视化"

@@ -1,0 +1,256 @@
+plan:
+  meta:
+    task_id: tri-transformer-backend
+    source_tech_doc: "docs/tasks/tri-transformer-backend/tech-solution.yaml"
+    scope: "P0|P1"
+    test_coverage_target: 80
+    min_tests_per_feature: 3
+    platform: backend
+    language: python
+
+  commands:
+    test: "cd backend && pytest tests/ -v --cov=app --cov-report=term-missing"
+    lint: "cd backend && black --check app/ tests/ && flake8 app/ tests/"
+    typecheck: ""
+
+  tasks:
+    - id: "T0-1"
+      priority: "P0"
+      type: "test"
+      title: "为项目基础结构编写测试 fixtures"
+      test_type: "pure"
+      file: "backend/tests/conftest.py"
+      given: "测试环境启动"
+      when: "执行任意测试"
+      then:
+        - "async test client 可用"
+        - "in-memory SQLite DB 可用"
+        - "mock JWT token 可用"
+        - "mock user fixture 可用"
+      depends_on: []
+
+    - id: "T1-1"
+      priority: "P0"
+      type: "test"
+      title: "为用户认证模块编写单元测试"
+      test_type: "pure"
+      file: "backend/tests/test_auth.py"
+      given: "空数据库"
+      when: "调用注册和登录接口"
+      then:
+        - "POST /auth/register 返回 201 和 user_id"
+        - "重复注册返回 409"
+        - "POST /auth/login 返回 access_token"
+        - "错误密码返回 401"
+        - "JWT token 结构合法（header.payload.signature）"
+      depends_on: ["T0-1"]
+
+    - id: "P0-1"
+      priority: "P0"
+      type: "code"
+      title: "实现项目基础结构（配置/数据库/安全工具）"
+      files:
+        - "backend/requirements.txt"
+        - "backend/pyproject.toml"
+        - "backend/.env.example"
+        - "backend/app/main.py"
+        - "backend/app/core/config.py"
+        - "backend/app/core/database.py"
+        - "backend/app/core/security.py"
+        - "backend/app/dependencies.py"
+      depends_on: ["T0-1"]
+      definition_of_done:
+        - "FastAPI 应用可启动"
+        - "JWT 工具函数通过单元测试"
+        - "数据库连接可用"
+        - "配置从环境变量读取"
+
+    - id: "P0-2"
+      priority: "P0"
+      type: "code"
+      title: "实现用户 ORM 模型和认证路由"
+      files:
+        - "backend/app/models/user.py"
+        - "backend/app/schemas/auth.py"
+        - "backend/app/api/v1/auth.py"
+      depends_on: ["T1-1", "P0-1"]
+      definition_of_done:
+        - "POST /api/v1/auth/register 返回 201"
+        - "POST /api/v1/auth/login 返回 JWT"
+        - "重复注册返回 409"
+        - "认证测试全部通过"
+
+    - id: "T2-1"
+      priority: "P0"
+      type: "test"
+      title: "为 RAG 引擎编写单元测试（Mock 嵌入）"
+      test_type: "pure"
+      file: "backend/tests/test_rag.py"
+      given: "Mock 嵌入服务（返回固定维度随机向量）和 in-memory Chroma"
+      when: "调用 RAG 服务各组件"
+      then:
+        - "文档解析器正确提取 PDF/DOCX/MD 文本"
+        - "分块器按 chunk_size 切分文档"
+        - "嵌入服务返回正确维度向量"
+        - "向量存储写入并按 kb_id 隔离查询"
+        - "检索返回 Top-K 结果"
+      depends_on: ["T0-1"]
+
+    - id: "P0-3"
+      priority: "P0"
+      type: "code"
+      title: "实现 RAG 引擎（文档处理/嵌入/向量存储/检索/重排）"
+      files:
+        - "backend/app/services/rag/document_processor.py"
+        - "backend/app/services/rag/embedder.py"
+        - "backend/app/services/rag/vector_store.py"
+        - "backend/app/services/rag/retriever.py"
+        - "backend/app/services/rag/reranker.py"
+      depends_on: ["T2-1", "P0-1"]
+      definition_of_done:
+        - "支持 PDF/DOCX/MD 文档解析"
+        - "固定窗口分块 chunk_size 可配置"
+        - "BGE 嵌入支持 Mock 模式"
+        - "Chroma 存储按 kb_id 隔离"
+        - "混合检索（向量+BM25）"
+        - "RAG 测试全部通过"
+
+    - id: "T3-1"
+      priority: "P0"
+      type: "test"
+      title: "为知识库管理 API 编写测试"
+      test_type: "pure"
+      file: "backend/tests/test_knowledge.py"
+      given: "已认证用户，Mock RAG 服务"
+      when: "调用知识库管理接口"
+      then:
+        - "POST /knowledge/documents 返回 202 和 document_id"
+        - "GET /knowledge/documents 返回当前用户的文档列表"
+        - "其他用户的文档不在列表中（kb_id 隔离）"
+        - "DELETE /knowledge/documents/{id} 删除文档和向量"
+        - "GET /knowledge/search 返回检索结果"
+        - "未认证访问返回 401"
+      depends_on: ["T0-1", "T1-1"]
+
+    - id: "P0-4"
+      priority: "P0"
+      type: "code"
+      title: "实现知识库管理 API（文档 CRUD/多租户）"
+      files:
+        - "backend/app/models/document.py"
+        - "backend/app/schemas/knowledge.py"
+        - "backend/app/api/v1/knowledge.py"
+      depends_on: ["T3-1", "P0-2", "P0-3"]
+      definition_of_done:
+        - "文档上传触发异步处理（BackgroundTasks）"
+        - "按 kb_id 隔离查询和删除"
+        - "检索接口可用"
+        - "知识库测试全部通过"
+
+    - id: "T4-1"
+      priority: "P0"
+      type: "test"
+      title: "为推理接口编写测试（Mock 模式）"
+      test_type: "pure"
+      file: "backend/tests/test_model.py"
+      given: "MOCK_INFERENCE=true，Mock 推理服务"
+      when: "调用推理接口"
+      then:
+        - "POST /model/inference 返回生成文本和置信度"
+        - "Mock 模式无需 GPU 正常返回"
+        - "推理失败自动重试 3 次"
+        - "参数缺失返回 422"
+        - "未认证访问返回 401"
+      depends_on: ["T0-1", "T1-1"]
+
+    - id: "P0-5"
+      priority: "P0"
+      type: "code"
+      title: "实现 Tri-Transformer 推理接口（含 Mock 实现）"
+      files:
+        - "backend/app/services/model/inference_service.py"
+        - "backend/app/services/model/mock_inference.py"
+        - "backend/app/schemas/model.py"
+        - "backend/app/api/v1/model.py"
+      depends_on: ["T4-1", "P0-2"]
+      definition_of_done:
+        - "InferenceService 抽象基类定义推理接口"
+        - "MockInferenceService 无需 GPU 返回模拟响应"
+        - "环境变量 MOCK_INFERENCE=true/false 控制模式"
+        - "推理失败指数退避重试最多 3 次"
+        - "推理测试全部通过"
+
+    - id: "T5-1"
+      priority: "P0"
+      type: "test"
+      title: "为对话管理 API 编写测试"
+      test_type: "pure"
+      file: "backend/tests/test_chat.py"
+      given: "已认证用户，Mock RAG 服务，Mock 推理服务"
+      when: "调用对话管理接口"
+      then:
+        - "POST /chat/sessions 返回 session_id"
+        - "POST /chat/sessions/{id}/messages 返回回复文本和知识来源"
+        - "GET /chat/sessions/{id}/history 返回消息列表"
+        - "回复中包含 sources 字段（知识来源引用）"
+        - "跨用户 session 访问返回 403"
+      depends_on: ["T0-1", "T1-1"]
+
+    - id: "P0-6"
+      priority: "P0"
+      type: "code"
+      title: "实现对话管理服务和 API（串联完整链路）"
+      files:
+        - "backend/app/models/chat_session.py"
+        - "backend/app/schemas/chat.py"
+        - "backend/app/services/chat/chat_service.py"
+        - "backend/app/api/v1/chat.py"
+      depends_on: ["T5-1", "P0-3", "P0-4", "P0-5"]
+      definition_of_done:
+        - "会话创建和查询正常"
+        - "消息处理串联 RAG 检索 + 推理完整链路"
+        - "对话历史持久化到 DB"
+        - "回复包含知识来源引用"
+        - "对话测试全部通过"
+
+    - id: "T6-1"
+      priority: "P1"
+      type: "test"
+      title: "为训练调度 API 编写测试"
+      test_type: "pure"
+      file: "backend/tests/test_train.py"
+      given: "已认证用户"
+      when: "调用训练调度接口"
+      then:
+        - "POST /train/jobs 返回 job_id 和初始状态 pending"
+        - "GET /train/jobs/{id} 返回当前任务状态"
+        - "DELETE /train/jobs/{id} 取消运行中任务"
+        - "查询不存在任务返回 404"
+      depends_on: ["T0-1", "T1-1"]
+
+    - id: "P1-1"
+      priority: "P1"
+      type: "code"
+      title: "实现训练调度服务和 API"
+      files:
+        - "backend/app/models/train_job.py"
+        - "backend/app/schemas/train.py"
+        - "backend/app/services/train/train_service.py"
+        - "backend/app/api/v1/train.py"
+      depends_on: ["T6-1", "P0-2"]
+      definition_of_done:
+        - "训练任务提交返回 job_id"
+        - "异步执行，状态追踪 pending/running/completed/failed"
+        - "支持取消运行中任务"
+        - "训练测试全部通过"
+
+  acceptance:
+    - "所有 P0 API 端点返回正确 HTTP 状态码"
+    - "JWT 认证保护所有业务接口，未授权返回 401"
+    - "MOCK_INFERENCE=true 环境下完整对话链路可用"
+    - "知识库按 kb_id 多租户隔离"
+    - "pytest tests/ -v 全部通过，覆盖率 >= 80%"
+
+  rollback:
+    - "新增代码不影响已有接口（全新项目无存量）"
+    - "Mock 模式可无依赖运行，便于回退测试"

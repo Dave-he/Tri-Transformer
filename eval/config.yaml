@@ -1,0 +1,39 @@
+models:
+  embedding_model: "BAAI/bge-large-zh-v1.5"
+  reranker_model: "BAAI/bge-reranker-large"
+  nli_model: "cross-encoder/nli-deberta-v3-base"
+  llm_model_a: "Qwen/Qwen2.5-1.5B-Instruct"
+  llm_model_b: "Qwen/Qwen2.5-0.5B-Instruct"
+
+loss_weights:
+  w1: 0.3
+  w2: 0.4
+  w3: 0.3
+  rag_loss:
+    alpha: 0.4
+    beta: 0.3
+    gamma: 0.3
+  control_alignment_loss:
+    lambda1: 0.4
+    lambda2: 0.4
+    lambda3: 0.2
+  hallucination_loss:
+    mu1: 0.4
+    mu2: 0.3
+    mu3: 0.3
+
+ci_gate:
+  hallucination_rate_threshold: 0.05
+  rag_recall_at_5_threshold: 0.90
+  bert_score_f1_threshold: 0.85
+
+ground_truth:
+  min_qa_per_1000_chars: 5
+  dual_model_similarity_threshold: 0.85
+  consistency_threshold: 0.7
+  storage_dir: "eval/data/gt_versions"
+
+evaluation:
+  bootstrap_n: 1000
+  batch_size: 32
+  device: "cpu"

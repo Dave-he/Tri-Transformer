@@ -1,0 +1,167 @@
+task_id: tri-transformer-backend
+task_type: backend
+platform: python
+framework: fastapi
+document: "docs/Tri-Transformer 可控对话与 RAG 知识库增强系统.md"
+created_at: "2026-03-27"
+
+title: "Tri-Transformer 后端服务开发"
+description: |
+  基于 FastAPI/Python 构建 Tri-Transformer 可控对话与 RAG 知识库增强系统的后端服务。
+  包含 RAG 文档知识库引擎、对话管理、知识库管理、Tri-Transformer 模型推理接口、
+  用户认证、训练调度等核心模块。
+
+scope: backend_only
+out_of_scope:
+  - 前端 React 界面（单独任务）
+  - 模型训练本身（提供训练调度接口）
+  - Docker 部署配置（可选附带）
+
+functional_requirements:
+  - id: FR-001
+    module: RAG引擎-文档管理
+    title: 多格式文档摄入与处理
+    description: |
+      支持 PDF、Word、Excel、PPT、Markdown、图片等格式的文档上传与处理。
+      包含 OCR 识别、文档清洗、去重、格式标准化。
+    priority: P0
+    acceptance_criteria:
+      - 支持上传 PDF、DOCX、MD 格式文档
+      - 上传后自动触发分块与向量化流程
+      - 返回文档 ID 与处理状态
+      - 不支持格式返回 422 错误
+
+  - id: FR-002
+    module: RAG引擎-分块与向量化
+    title: 文档分块与 BGE 向量化
+    description: |
+      支持固定窗口、语义、父子层级等多种分块策略，
+      使用 BGE 系列模型生成高维向量，存入向量数据库。
+    priority: P0
+    acceptance_criteria:
+      - 支持固定窗口分块（chunk_size 可配置）
+      - 调用 BGE 嵌入模型生成向量
+      - 向量与元数据一同存入 Chroma/Milvus
+      - 分块数量与文档 ID 关联可查询
+
+  - id: FR-003
+    module: RAG引擎-检索
+    title: 混合检索与重排
+    description: |
+      向量检索 + BM25 关键词混合检索，
+      通过 BGE Reranker 重排提升精准度，
+      支持元数据过滤（权限、时间、文档类型）。
+    priority: P0
+    acceptance_criteria:
+      - 输入 query 返回 Top-K 相关文档片段
+      - 混合检索（向量 + BM25）
+      - 支持 metadata 过滤参数
+      - 检索响应时间 < 500ms
+
+  - id: FR-004
+    module: 对话管理
+    title: 多轮对话 API
+    description: |
+      管理对话会话（session），支持多轮对话历史维护，
+      接受用户输入，执行 RAG 检索，调用 Tri-Transformer 推理，
+      返回受控生成回复及知识来源。
+    priority: P0
+    acceptance_criteria:
+      - POST /api/v1/chat/sessions 创建会话
+      - POST /api/v1/chat/sessions/{id}/messages 发送消息并获取回复
+      - GET /api/v1/chat/sessions/{id}/history 获取对话历史
+      - 回复中包含检索到的知识来源引用
+      - 单条回复生成时间 < 2s（1024 token）
+
+  - id: FR-005
+    module: 知识库管理
+    title: 知识库 CRUD API
+    description: |
+      管理知识库（knowledge base），支持文档的增删改查，
+      版本管理，权限控制（多用户/多租户）。
+    priority: P0
+    acceptance_criteria:
+      - POST /api/v1/knowledge/documents 上传文档
+      - GET /api/v1/knowledge/documents 列表查询
+      - DELETE /api/v1/knowledge/documents/{id} 删除文档
+      - GET /api/v1/knowledge/search 检索测试接口
+      - 支持按 kb_id 租户隔离
+
+  - id: FR-006
+    module: 模型推理
+    title: Tri-Transformer 推理接口
+    description: |
+      封装 Tri-Transformer 三分支模型（I/C/O）推理调用，
+      接收编码后的输入+检索知识，返回受控生成的回复文本。
+    priority: P0
+    acceptance_criteria:
+      - POST /api/v1/model/inference 推理接口
+      - 支持传入 query、context（检索知识）、history
+      - 返回生成文本及置信度
+      - 推理失败自动重试 3 次
+
+  - id: FR-007
+    module: 用户认证
+    title: 用户注册/登录/JWT 认证
+    description: |
+      基于 JWT 的用户认证体系，支持账号密码登录，
+      接口权限保护，多租户数据隔离。
+    priority: P0
+    acceptance_criteria:
+      - POST /api/v1/auth/register 注册
+      - POST /api/v1/auth/login 登录，返回 JWT token
+      - 受保护接口需在 Header 携带 Bearer token
+      - token 过期返回 401
+
+  - id: FR-008
+    module: 训练调度
+    title: 训练任务提交与状态查询
+    description: |
+      提供模型微调任务的提交与状态查询接口，
+      支持分阶段训练（LoRA/全量/RAG适配），
+      异步执行，支持进度查询。
+    priority: P1
+    acceptance_criteria:
+      - POST /api/v1/train/jobs 提交训练任务
+      - GET /api/v1/train/jobs/{id} 查询任务状态
+      - 支持任务取消
+      - 任务状态包含 pending/running/completed/failed
+
+  - id: FR-009
+    module: 后处理
+    title: 事实一致性校验与格式优化
+    description: |
+      对生成回复进行事实一致性校验（与检索知识对比），
+      格式标准化（引用标注），幻觉检测与抑制。
+    priority: P1
+    acceptance_criteria:
+      - 生成内容与知识库一致性 > 95%
+      - 自动标注知识来源引用
+      - 检测到不一致内容时降低置信度
+
+non_functional_requirements:
+  - 检索响应时间 < 500ms（Top 10）
+  - 生成回复时间 < 2s（1024 token）
+  - 支持 10+ 并发用户
+  - 系统可用性 > 99.9%
+  - 数据加密存储
+  - JWT 认证保护
+
+tech_stack:
+  language: python
+  framework: fastapi
+  rag_engine: llamaindex
+  vector_db: chroma
+  embedding_model: bge-large-zh-v1.5
+  reranker: bge-reranker-large
+  metadata_db: postgresql
+  doc_storage: minio_or_local
+  auth: jwt
+  testing: pytest
+
+quality_gate:
+  verdict: PASS
+  blockers: []
+  warnings:
+    - "Tri-Transformer 模型本身属于研究项目，推理接口需预留 mock 支持以便无 GPU 环境开发测试"
+    - "BGE 模型依赖大型模型文件，需支持离线/本地路径配置"

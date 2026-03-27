@@ -1,0 +1,48 @@
+version: '3.8'
+
+services:
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    ports:
+      - "3000:80"
+    depends_on:
+      - backend
+    environment:
+      - NODE_ENV=production
+    networks:
+      - tri-transformer-net
+
+  backend:
+    image: tri-transformer-backend:latest
+    ports:
+      - "8000:8000"
+    environment:
+      - VECTOR_DB_URL=http://vector_db:19530
+    depends_on:
+      - vector_db
+    networks:
+      - tri-transformer-net
+    volumes:
+      - ./data/documents:/app/data/documents
+      - ./data/models:/app/data/models
+
+  vector_db:
+    image: milvusdb/milvus:v2.4.0-standalone
+    ports:
+      - "19530:19530"
+    environment:
+      - ETCD_USE_EMBED=true
+      - COMMON_STORAGETYPE=local
+    volumes:
+      - milvus_data:/var/lib/milvus
+    networks:
+      - tri-transformer-net
+
+networks:
+  tri-transformer-net:
+    driver: bridge
+
+volumes:
+  milvus_data:

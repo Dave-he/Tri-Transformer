@@ -1,0 +1,158 @@
+task_id: tri-transformer-eval
+title: Tri-Transformer 目标函数与验证体系设计（Agent 自主 Ground Truth 发现）
+platform: Backend/Python
+mode: standard
+
+product_overview:
+  name: Tri-Transformer 可控对话与 RAG 知识库增强系统
+  description: >
+    融合三分支 Transformer 扭合架构（I-编码/C-控制/O-解码）与 RAG 文档知识库的
+    高端对话生成系统，本需求聚焦于设计该系统的目标函数体系与自动化 Evaluation 框架，
+    使 Agent 能自主发现并构建 Ground Truth 数据集，从而无需人工标注即可评估系统各模块性能。
+  core_problem: >
+    当前系统缺乏系统性的目标函数定义与可量化验证体系，无法自动化地评估：
+    (1) RAG 检索质量；(2) Tri-Transformer 生成可控性；(3) 幻觉率；(4) 知识一致性。
+    同时缺少 Agent 自主挖掘 Ground Truth 的机制，导致评估成本高、可重复性差。
+
+requirements:
+  functional:
+    - id: FR-01
+      module: 目标函数体系
+      title: RAG 检索质量目标函数
+      description: >
+        设计 RAG 模块的损失函数，包括：
+        (1) 检索相关性损失（Retrieval Relevance Loss）：衡量检索结果与查询的语义相关度；
+        (2) 信息覆盖损失（Coverage Loss）：衡量检索知识是否覆盖回答所需事实；
+        (3) 排序一致性损失（Ranking Consistency Loss）：衡量 reranker 排序质量。
+      acceptance_criteria:
+        - 检索相关性目标函数支持 Recall@K（K=1,3,5,10）计算
+        - 信息覆盖损失通过 F1-Token Overlap 或 BERTScore 实现
+        - 排序损失支持 NDCG 和 MRR 指标
+        - 目标函数可微分，支持端到端反向传播
+      priority: P0
+
+    - id: FR-02
+      module: 目标函数体系
+      title: Tri-Transformer 控制对齐损失（C 分支）
+      description: >
+        设计 C-Transformer 控制中枢的损失函数：
+        (1) 控制信号对齐损失（Control Alignment Loss）：确保 C 分支输出约束 I/O 分支行为；
+        (2) 知识一致性损失（Knowledge Consistency Loss）：惩罚生成内容与检索知识的矛盾；
+        (3) 指令遵循损失（Instruction Following Loss）：衡量生成内容对系统 prompt 的遵循程度。
+      acceptance_criteria:
+        - 控制对齐损失通过 Contrastive Learning 实现，支持正负样本对
+        - 知识一致性损失基于 NLI（自然语言推理）模型，检测生成与知识的蕴含关系
+        - 指令遵循损失支持分类（是否遵循）和回归（遵循程度）两种形式
+        - 三类损失通过可配置权重加权合并
+      priority: P0
+
+    - id: FR-03
+      module: 目标函数体系
+      title: 幻觉抑制损失函数
+      description: >
+        设计幻觉检测与抑制目标函数：
+        (1) 事实幻觉损失（Factual Hallucination Loss）：基于知识库对生成内容进行事实核查；
+        (2) 来源归因损失（Source Attribution Loss）：要求每个事实声明都能追溯到具体知识片段；
+        (3) 拒答校准损失（Abstention Calibration Loss）：当知识库无相关信息时惩罚强行生成。
+      acceptance_criteria:
+        - 事实幻觉损失支持 FactScore 或基于检索的事实验证
+        - 来源归因通过 Attention Weight 分析实现片段级追溯
+        - 拒答损失支持置信度阈值可配置
+        - 提供幻觉率（Hallucination Rate）聚合指标
+      priority: P0
+
+    - id: FR-04
+      module: Ground Truth 自主发现
+      title: Agent 自主 Ground Truth 构建引擎
+      description: >
+        设计 Agent 自主发现 Ground Truth 的完整流程：
+        (1) 文档内置事实挖掘：从知识库文档中自动提取问答对作为 Ground Truth；
+        (2) 双大模型交叉验证：用两个独立大模型对同一问题生成答案，取共识部分作为伪 Ground Truth；
+        (3) 知识图谱 Triple 提取：从文档中提取 (主体, 关系, 客体) 三元组作为结构化 Ground Truth；
+        (4) 对比一致性验证：通过多轮追问检验 Ground Truth 的自洽性，过滤矛盾样本。
+      acceptance_criteria:
+        - 文档 QA 自动生成覆盖率 ≥ 80%（每 1000 字生成 ≥ 5 个问答对）
+        - 双模型共识采样准确率 ≥ 85%（与人工标注对比）
+        - 知识三元组提取支持中英文，准确率 ≥ 90%
+        - 自动过滤矛盾/低质量 Ground Truth，保留比例 ≥ 70%
+        - 支持增量更新，新增文档自动触发 Ground Truth 更新
+      priority: P0
+
+    - id: FR-05
+      module: Ground Truth 自主发现
+      title: 多源 Ground Truth 融合与质量评估
+      description: >
+        将多个来源的 Ground Truth 进行融合与质量打分：
+        (1) 来源权重分配：人工标注 > 双模型共识 > 单模型生成；
+        (2) Ground Truth 质量分：基于语义多样性、覆盖广度、难度分布打分；
+        (3) 难度分级：Easy/Medium/Hard 三级，支持分级评估；
+        (4) 持久化存储：Ground Truth 数据集版本化管理，支持复现。
+      acceptance_criteria:
+        - 融合后 Ground Truth 包含难度分级标签
+        - 质量分筛选后数据集 F1 提升 ≥ 5% vs 未筛选版本
+        - 支持 JSON Lines / HuggingFace Dataset 格式导出
+        - 版本控制支持回溯到任意历史版本
+      priority: P1
+
+    - id: FR-06
+      module: Evaluation 框架
+      title: 自动化 Evaluation Pipeline
+      description: >
+        构建端到端自动化评估流程：
+        (1) RAG 评估：使用 RAGAS 框架或自研指标（faithfulness, answer_relevancy, context_recall）；
+        (2) 生成质量评估：BLEU-4, ROUGE-L, BERTScore, METEOR；
+        (3) 控制性评估：指令遵循率、主题一致性、风格一致性；
+        (4) 幻觉评估：FactScore、知识库覆盖率、来源追溯成功率；
+        (5) 端到端对话评估：多轮对话连贯性、上下文保持率。
+      acceptance_criteria:
+        - Pipeline 支持单条 / 批量 / 数据集级评估
+        - 每个指标提供置信区间（Bootstrap Sampling）
+        - 评估报告自动生成（JSON + Markdown 双格式）
+        - 支持 A/B 对比评估（模型版本对比）
+        - 评估耗时 < 5min / 1000 条样本（GPU 加速）
+      priority: P0
+
+    - id: FR-07
+      module: Evaluation 框架
+      title: 实时监控与 Benchmark 持续集成
+      description: >
+        将 Evaluation 集成到开发流水线：
+        (1) 每次模型训练后自动触发 benchmark 评估；
+        (2) 性能退化告警（相比基线下降 > 2% 自动告警）；
+        (3) 可视化 Dashboard（各指标趋势折线图）；
+        (4) 与 GitHub Actions / CI 集成，训练 Pipeline 中嵌入 Gate Check。
+      acceptance_criteria:
+        - CI Gate 检查：Hallucination Rate < 5%, RAG Recall@5 > 90%, BERTScore F1 > 0.85
+        - Dashboard 支持指标钻取（按文档类型、难度分级、对话轮次过滤）
+        - 告警支持邮件 / Webhook 通知
+        - 历史评估结果持久化存储，保留 ≥ 90 天
+      priority: P1
+
+  non_functional:
+    - 评估框架完全开源，无商业依赖
+    - Ground Truth 构建过程可完全离线运行（无需调用付费 API）
+    - 支持 CPU-only 模式（降低硬件门槛）
+    - 评估脚本文档完善，非技术用户可上手
+
+constraints:
+  tech_stack:
+    - language: Python 3.10+
+    - framework: PyTorch, Hugging Face Transformers
+    - rag_framework: LlamaIndex / LangChain
+    - vector_db: Chroma (dev), Milvus (prod)
+    - embedding: BGE-large-zh-v1.5
+    - eval_framework: RAGAS, deepeval, evaluate (HuggingFace)
+    - nlp_tools: spaCy, sentence-transformers
+    - ci: GitHub Actions
+  no_external_paid_api: true
+  offline_capable: true
+
+figma_links: []
+is_ui_requirement: false
+
+acceptance_criteria_summary:
+  - Agent 能在无人工介入的情况下从文档库自动构建 ≥ 500 条高质量 Ground Truth
+  - 所有目标函数均有对应的单元测试与数值验证
+  - Evaluation Pipeline 一键运行，输出标准化评估报告
+  - CI Gate 自动阻断性能退化的模型版本
+  - 系统支持 Docker 一键部署

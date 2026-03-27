@@ -1,0 +1,467 @@
+plan:
+  meta:
+    task_id: tri-transformer-frontend
+    source_tech_doc: "docs/tasks/tri-transformer-frontend/tech-solution.yaml"
+    scope: "P0|P1"
+    test_coverage_target: 80
+    min_tests_per_feature: 3
+    platform: web
+    created_at: "2026-03-27"
+
+  tasks:
+    # ─── 项目初始化 ───────────────────────────────────────────
+    - id: T0-1
+      priority: P0
+      type: test
+      title: "验证项目初始化配置正确性"
+      test_type: pure
+      file: "frontend/src/test/setup.test.ts"
+      given: "Vite + React + TypeScript 项目已创建"
+      when: "执行构建命令"
+      then:
+        - "npm run build 成功无报错"
+        - "TypeScript 类型检查通过"
+        - "Vitest 测试框架可正常运行"
+      depends_on: []
+
+    - id: P0-1
+      priority: P0
+      type: code
+      title: "初始化 Vite + React + TypeScript 项目"
+      files:
+        - "frontend/package.json"
+        - "frontend/vite.config.ts"
+        - "frontend/tsconfig.json"
+        - "frontend/index.html"
+        - "frontend/src/main.tsx"
+        - "frontend/src/App.tsx"
+      depends_on: [T0-1]
+      definition_of_done:
+        - "package.json 包含所有必要依赖"
+        - "vite.config.ts 含路径别名 @/ → src/"
+        - "tsconfig.json 严格模式开启"
+        - "npm run build 成功"
+
+    # ─── 类型定义 ─────────────────────────────────────────────
+    - id: T1-1
+      priority: P0
+      type: test
+      title: "验证 API 类型定义完整性"
+      test_type: pure
+      file: "frontend/src/types/__tests__/api.test.ts"
+      given: "API 类型定义文件存在"
+      when: "使用 TypeScript 编译器检查类型"
+      then:
+        - "User、Conversation、Message、Document、Metrics 类型全部定义"
+        - "API 请求/响应类型正确"
+        - "无 any 类型使用"
+      depends_on: [P0-1]
+
+    - id: P0-2
+      priority: P0
+      type: code
+      title: "定义 TypeScript 类型"
+      files:
+        - "frontend/src/types/api.ts"
+        - "frontend/src/types/store.ts"
+      depends_on: [T1-1]
+      definition_of_done:
+        - "User, Conversation, Message, Document 类型定义完整"
+        - "Metrics, TrainingStatus 类型定义完整"
+        - "ApiResponse<T> 泛型封装"
+        - "所有类型有 readonly 修饰符"
+
+    # ─── API 客户端 ───────────────────────────────────────────
+    - id: T2-1
+      priority: P0
+      type: test
+      title: "为 Axios 客户端编写单元测试"
+      test_type: pure
+      file: "frontend/src/api/__tests__/client.test.ts"
+      given: "Axios 实例已创建"
+      when: "发起 API 请求"
+      then:
+        - "自动注入 Authorization header"
+        - "401 响应触发 logout 并跳转 /login"
+        - "网络错误显示统一错误消息"
+      depends_on: [P0-2]
+
+    - id: P0-3
+      priority: P0
+      type: code
+      title: "实现 API 客户端层"
+      files:
+        - "frontend/src/api/client.ts"
+        - "frontend/src/api/auth.ts"
+        - "frontend/src/api/conversations.ts"
+        - "frontend/src/api/documents.ts"
+        - "frontend/src/api/training.ts"
+      depends_on: [T2-1]
+      definition_of_done:
+        - "Axios 实例含 request/response 拦截器"
+        - "token 自动从 authStore 获取注入"
+        - "401 自动 logout + 跳转"
+        - "所有 API 函数有 TypeScript 类型"
+
+    # ─── MSW Mock ─────────────────────────────────────────────
+    - id: T3-1
+      priority: P0
+      type: test
+      title: "验证 MSW Mock handlers 正确拦截请求"
+      test_type: pure
+      file: "frontend/src/mocks/__tests__/handlers.test.ts"
+      given: "MSW 服务器已启动"
+      when: "发起各模块 API 请求"
+      then:
+        - "POST /auth/login 返回 token 和 user 对象"
+        - "GET /conversations 返回对话列表"
+        - "POST /documents/upload 返回处理中状态"
+        - "GET /metrics 返回指标数据"
+      depends_on: [P0-3]
+
+    - id: P0-4
+      priority: P0
+      type: code
+      title: "实现 MSW Mock handlers"
+      files:
+        - "frontend/src/mocks/handlers/auth.ts"
+        - "frontend/src/mocks/handlers/conversations.ts"
+        - "frontend/src/mocks/handlers/documents.ts"
+        - "frontend/src/mocks/handlers/training.ts"
+        - "frontend/src/mocks/browser.ts"
+        - "frontend/src/mocks/server.ts"
+      depends_on: [T3-1]
+      definition_of_done:
+        - "所有 API 端点有对应 Mock handler"
+        - "Mock 数据覆盖主路径和错误场景"
+        - "documents/upload 支持进度模拟"
+        - "MSW browser worker 已注册"
+
+    # ─── AuthStore + 认证模块 ─────────────────────────────────
+    - id: T4-1
+      priority: P0
+      type: test
+      title: "为 authStore 编写单元测试"
+      test_type: pure
+      file: "frontend/src/store/__tests__/authStore.test.ts"
+      given: "MSW Mock 已配置"
+      when: "调用 login/logout actions"
+      then:
+        - "login 成功后 isAuthenticated 为 true，token 存储正确"
+        - "login 失败后 error 状态设置，isAuthenticated 保持 false"
+        - "logout 清除 token 和 user 状态"
+        - "持久化：刷新后 token 恢复"
+      depends_on: [P0-4]
+
+    - id: P0-5
+      priority: P0
+      type: code
+      title: "实现 authStore 和认证页面"
+      files:
+        - "frontend/src/store/authStore.ts"
+        - "frontend/src/hooks/useAuth.ts"
+        - "frontend/src/pages/LoginPage.tsx"
+        - "frontend/src/pages/RegisterPage.tsx"
+        - "frontend/src/layouts/AuthLayout.tsx"
+      depends_on: [T4-1]
+      definition_of_done:
+        - "authStore：login/logout/register actions + token 持久化"
+        - "LoginPage：表单验证 + 错误提示 + loading 状态"
+        - "RegisterPage：表单验证 + 成功跳转"
+        - "AuthLayout：居中卡片样式"
+        - "useAuth hook 封装认证状态判断"
+
+    # ─── 主布局与路由 ──────────────────────────────────────────
+    - id: T5-1
+      priority: P0
+      type: test
+      title: "验证路由守卫和布局渲染"
+      test_type: component
+      file: "frontend/src/layouts/__tests__/MainLayout.test.tsx"
+      given: "用户已登录"
+      when: "访问受保护路由"
+      then:
+        - "已认证用户可访问 /chat /documents /training /metrics"
+        - "未认证用户被重定向到 /login"
+        - "侧边栏导航正确渲染所有菜单项"
+      depends_on: [P0-5]
+
+    - id: P0-6
+      priority: P0
+      type: code
+      title: "实现主布局、路由和认证守卫"
+      files:
+        - "frontend/src/layouts/MainLayout.tsx"
+        - "frontend/src/components/common/AuthGuard.tsx"
+      depends_on: [T5-1]
+      definition_of_done:
+        - "MainLayout：Sider + Header + Content 布局"
+        - "Sider 导航含对话/文档/训练/指标菜单"
+        - "AuthGuard：未登录重定向 /login"
+        - "路由配置完整（4个主路由）"
+
+    # ─── ConversationStore ────────────────────────────────────
+    - id: T6-1
+      priority: P0
+      type: test
+      title: "为 conversationStore 编写单元测试"
+      test_type: pure
+      file: "frontend/src/store/__tests__/conversationStore.test.ts"
+      given: "MSW Mock 已配置"
+      when: "调用 sendMessage action"
+      then:
+        - "sendMessage 将 loading 设为 true，完成后设回 false"
+        - "消息成功后追加到 messages 数组"
+        - "消息包含 sources 引用数组"
+        - "API 失败后 error 状态设置"
+        - "createConversation 正确添加到 conversations 列表"
+      depends_on: [P0-4]
+
+    - id: P0-7
+      priority: P0
+      type: code
+      title: "实现 conversationStore"
+      files:
+        - "frontend/src/store/conversationStore.ts"
+        - "frontend/src/hooks/useConversation.ts"
+      depends_on: [T6-1]
+      definition_of_done:
+        - "conversations 列表管理（fetch/create/setActive）"
+        - "messages 加载与发送"
+        - "loading/error 状态管理"
+        - "sendMessage 含 sources 数据处理"
+
+    # ─── 对话界面组件 ─────────────────────────────────────────
+    - id: T7-1
+      priority: P0
+      type: test
+      title: "为 MessageBubble 组件编写测试"
+      test_type: component
+      file: "frontend/src/components/chat/__tests__/MessageBubble.test.tsx"
+      given: "消息数据包含 content 和 sources"
+      when: "渲染 MessageBubble 组件"
+      then:
+        - "用户消息右对齐，助手消息左对齐"
+        - "sources 不为空时显示来源折叠面板"
+        - "sources 为空时不渲染来源区域"
+        - "消息内容正确渲染"
+      depends_on: [P0-7]
+
+    - id: T7-2
+      priority: P0
+      type: test
+      title: "为 ChatInput 组件编写测试"
+      test_type: component
+      file: "frontend/src/components/chat/__tests__/ChatInput.test.tsx"
+      given: "ChatInput 组件渲染"
+      when: "用户输入内容并按 Enter 或点击发送"
+      then:
+        - "Enter 键触发 onSend 回调"
+        - "Shift+Enter 换行不触发发送"
+        - "loading 为 true 时发送按钮 disabled"
+        - "发送后输入框清空"
+      depends_on: [P0-7]
+
+    - id: P0-8
+      priority: P0
+      type: code
+      title: "实现对话界面组件"
+      files:
+        - "frontend/src/components/chat/MessageBubble.tsx"
+        - "frontend/src/components/chat/MessageList.tsx"
+        - "frontend/src/components/chat/SourcePanel.tsx"
+        - "frontend/src/components/chat/ChatInput.tsx"
+        - "frontend/src/components/chat/ConversationList.tsx"
+        - "frontend/src/pages/ChatPage.tsx"
+      depends_on: [T7-1, T7-2]
+      definition_of_done:
+        - "MessageBubble：用户/助手气泡区分、来源引用展示"
+        - "MessageList：自动滚动到底部"
+        - "SourcePanel：文档名 + 相关度分数"
+        - "ChatInput：Enter 发送、Shift+Enter 换行"
+        - "ConversationList：新建/切换/导出对话"
+        - "ChatPage：整体布局组合"
+
+    # ─── 导出工具函数 ─────────────────────────────────────────
+    - id: T8-1
+      priority: P1
+      type: test
+      title: "为 exportConversation 工具函数编写测试"
+      test_type: pure
+      file: "frontend/src/utils/__tests__/exportConversation.test.ts"
+      given: "对话消息数组"
+      when: "调用 exportToJSON / exportToMarkdown"
+      then:
+        - "exportToJSON 返回合法 JSON 字符串"
+        - "exportToMarkdown 包含消息角色和内容"
+        - "空消息数组不报错"
+      depends_on: [P0-7]
+
+    - id: P1-1
+      priority: P1
+      type: code
+      title: "实现对话导出工具函数"
+      files:
+        - "frontend/src/utils/exportConversation.ts"
+        - "frontend/src/utils/formatDate.ts"
+      depends_on: [T8-1]
+      definition_of_done:
+        - "exportToJSON：序列化为结构化 JSON"
+        - "exportToMarkdown：格式化为可读 Markdown"
+        - "触发浏览器文件下载"
+
+    # ─── DocumentStore + 知识库管理 ───────────────────────────
+    - id: T9-1
+      priority: P0
+      type: test
+      title: "为 documentStore 编写单元测试"
+      test_type: pure
+      file: "frontend/src/store/__tests__/documentStore.test.ts"
+      given: "MSW Mock 已配置"
+      when: "调用 upload/delete/search actions"
+      then:
+        - "upload 更新 uploadProgress 并最终将文档加入列表"
+        - "delete 从列表中移除指定文档"
+        - "search 返回 searchResults 数组"
+        - "upload 失败后 error 状态设置"
+      depends_on: [P0-4]
+
+    - id: P0-9
+      priority: P0
+      type: code
+      title: "实现 documentStore 和知识库管理界面"
+      files:
+        - "frontend/src/store/documentStore.ts"
+        - "frontend/src/hooks/useDocuments.ts"
+        - "frontend/src/components/documents/DocumentList.tsx"
+        - "frontend/src/components/documents/UploadPanel.tsx"
+        - "frontend/src/components/documents/SearchTestPanel.tsx"
+        - "frontend/src/pages/DocumentsPage.tsx"
+      depends_on: [T9-1]
+      definition_of_done:
+        - "documentStore：upload/delete/search + uploadProgress"
+        - "DocumentList：状态 Badge + 删除确认 + 分页"
+        - "UploadPanel：拖拽/点击上传 + 进度条"
+        - "SearchTestPanel：输入查询 + Top-K 结果展示"
+        - "DocumentsPage：三个组件整合"
+
+    - id: T9-2
+      priority: P0
+      type: test
+      title: "为 UploadPanel 组件编写测试"
+      test_type: component
+      file: "frontend/src/components/documents/__tests__/UploadPanel.test.tsx"
+      given: "UploadPanel 组件渲染"
+      when: "选择文件并上传"
+      then:
+        - "上传中显示进度条"
+        - "不支持的文件格式显示错误提示"
+        - "上传成功后重置状态"
+        - "上传失败后显示错误信息"
+      depends_on: [P0-9]
+
+    - id: P0-10
+      priority: P0
+      type: code
+      title: "补充 UploadPanel 格式校验与错误处理"
+      files:
+        - "frontend/src/components/documents/UploadPanel.tsx"
+      depends_on: [T9-2]
+      definition_of_done:
+        - "文件格式校验（PDF/Word/Markdown/TXT）"
+        - "文件大小限制提示"
+        - "上传失败重试机制"
+
+    # ─── metricsStore + 监控界面 ──────────────────────────────
+    - id: T10-1
+      priority: P1
+      type: test
+      title: "为 metricsStore 编写单元测试"
+      test_type: pure
+      file: "frontend/src/store/__tests__/metricsStore.test.ts"
+      given: "MSW Mock 已配置"
+      when: "调用 fetchMetrics / fetchStatus"
+      then:
+        - "fetchMetrics 更新 metrics 状态"
+        - "fetchStatus 更新 trainingStatus 状态"
+        - "定时轮询 10s 更新数据"
+      depends_on: [P0-4]
+
+    - id: P1-2
+      priority: P1
+      type: code
+      title: "实现 metricsStore 和监控界面"
+      files:
+        - "frontend/src/store/metricsStore.ts"
+        - "frontend/src/components/metrics/MetricsChart.tsx"
+        - "frontend/src/components/metrics/TrainingStatusCard.tsx"
+        - "frontend/src/pages/TrainingPage.tsx"
+        - "frontend/src/pages/MetricsPage.tsx"
+      depends_on: [T10-1]
+      definition_of_done:
+        - "metricsStore：轮询获取指标历史"
+        - "MetricsChart：Recharts LineChart，检索准确率/BLEU/幻觉率"
+        - "TrainingStatusCard：阶段/进度/ETA"
+        - "MetricsPage：lazy load"
+        - "TrainingPage：实时状态更新"
+
+    # ─── 通用组件 ─────────────────────────────────────────────
+    - id: P0-11
+      priority: P0
+      type: code
+      title: "实现通用组件（空态/加载/错误边界）"
+      files:
+        - "frontend/src/components/common/LoadingSpinner.tsx"
+        - "frontend/src/components/common/ErrorBoundary.tsx"
+        - "frontend/src/components/common/EmptyState.tsx"
+      depends_on: [P0-6]
+      definition_of_done:
+        - "LoadingSpinner：可配置大小"
+        - "EmptyState：可定制图标/文案/操作按钮"
+        - "ErrorBoundary：捕获渲染错误，友好提示"
+
+    # ─── 部署配置 ─────────────────────────────────────────────
+    - id: P1-3
+      priority: P1
+      type: code
+      title: "实现 Docker 部署配置"
+      files:
+        - "frontend/Dockerfile"
+        - "frontend/nginx.conf"
+        - "docker-compose.yml"
+      depends_on: [P0-1]
+      definition_of_done:
+        - "Dockerfile：多阶段构建（node:20-alpine + nginx:alpine）"
+        - "nginx.conf：SPA fallback + /api 代理到后端"
+        - "docker-compose.yml：frontend + backend 服务定义"
+        - "docker build 成功"
+
+  commands:
+    test: "cd frontend && npx vitest run"
+    lint: "cd frontend && npx eslint src --ext .ts,.tsx --max-warnings 0"
+    typecheck: "cd frontend && npx tsc --noEmit"
+    build: "cd frontend && npm run build"
+
+  acceptance:
+    - id: AC-001
+      description: "多轮对话上下文保留"
+      test: "vitest run src/store/__tests__/conversationStore.test.ts"
+    - id: AC-002
+      description: "知识来源引用展示"
+      test: "vitest run src/components/chat/__tests__/MessageBubble.test.tsx"
+    - id: AC-003
+      description: "文档上传与提问"
+      test: "vitest run src/components/documents/__tests__/UploadPanel.test.tsx"
+    - id: AC-004
+      description: "对话历史导出"
+      test: "vitest run src/utils/__tests__/exportConversation.test.ts"
+    - id: AC-005
+      description: "知识库文档管理"
+      test: "vitest run src/store/__tests__/documentStore.test.ts"
+    - id: AC-009
+      description: "用户认证"
+      test: "vitest run src/store/__tests__/authStore.test.ts"
+
+  rollback:
+    - "恢复方式：回退到上一个 Docker 镜像版本"
+    - "前端为静态资源，无数据迁移风险"

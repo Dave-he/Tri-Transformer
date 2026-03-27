@@ -1,0 +1,150 @@
+task_id: tri-transformer-frontend
+version: "1"
+created_at: "2026-03-27"
+
+business_goal:
+  summary: "为 Tri-Transformer 可控对话与 RAG 知识库增强系统提供可视化 Web 前端"
+  target_users:
+    - "技术开发者（AI 工程师）"
+    - "领域专家（企业顾问、医生、律师）"
+    - "家庭管理者"
+  problem_to_solve: "解决通用大模型幻觉问题、知识不可追溯问题、可控性差问题"
+  success_metrics:
+    - "用户可通过 Web 界面完成多轮对话并看到知识来源引用"
+    - "文档上传后可直接基于文档内容提问"
+    - "管理员可通过面板管理知识库与监控模型训练状态"
+
+scope:
+  in_scope:
+    - "对话界面（单轮/多轮对话、知识来源追溯、历史导出）"
+    - "文档上传与提问功能"
+    - "RAG 知识库管理面板（上传、删除、检索测试）"
+    - "模型训练状态监控界面"
+    - "性能指标可视化（检索准确率、BLEU 分数、幻觉率）"
+    - "用户身份认证界面（登录/注册）"
+  out_of_scope:
+    - "后端 API 实现"
+    - "Tri-Transformer 模型实现"
+    - "RAG 引擎实现"
+    - "移动端 APP"
+
+platform: web
+tech_stack:
+  frontend: "React 18 + Ant Design Pro 5.x"
+  state_management: "Zustand / React Context"
+  bundler: "Vite"
+  language: "TypeScript"
+  testing: "Vitest + React Testing Library"
+
+key_interactions:
+  - path: "用户登录 → 进入对话界面 → 输入问题 → 查看回复与知识来源"
+    entry: "登录页"
+    states:
+      - "加载中"
+      - "生成中（流式）"
+      - "完成"
+      - "错误/超时"
+  - path: "用户上传文档 → 系统处理 → 基于文档提问"
+    entry: "对话界面上传按钮"
+    states:
+      - "上传中"
+      - "处理中"
+      - "可用"
+  - path: "管理员进入知识库管理 → 上传/删除文档 → 测试检索效果"
+    entry: "管理面板导航"
+    states:
+      - "列表展示"
+      - "上传中"
+      - "检索测试中"
+  - path: "查看模型训练状态与性能指标仪表盘"
+    entry: "监控面板导航"
+    states:
+      - "实时数据"
+      - "历史趋势"
+
+acceptance_criteria:
+  - id: AC-001
+    description: "用户可发起多轮对话，系统保留上下文历史"
+    testable: true
+  - id: AC-002
+    description: "每条回复显示对应的知识来源引用（文档名、段落）"
+    testable: true
+  - id: AC-003
+    description: "用户可上传 PDF/Word/Markdown 文件并基于内容提问"
+    testable: true
+  - id: AC-004
+    description: "对话历史可保存并支持导出（JSON/Markdown 格式）"
+    testable: true
+  - id: AC-005
+    description: "管理员可在知识库管理界面上传、删除文档"
+    testable: true
+  - id: AC-006
+    description: "管理员可在检索测试界面输入查询并查看 Top-10 检索结果"
+    testable: true
+  - id: AC-007
+    description: "性能指标面板显示检索准确率、BLEU 分数、幻觉率趋势图"
+    testable: true
+  - id: AC-008
+    description: "界面加载时间 < 3s，对话响应等待提示在 500ms 内出现"
+    testable: true
+  - id: AC-009
+    description: "支持用户登录/注册，对话数据与账号绑定"
+    testable: true
+  - id: AC-010
+    description: "空态、错误态、加载态均有友好提示"
+    testable: true
+
+data_and_interfaces:
+  status: "待确认"
+  note: "全新项目，后端 API 尚未实现，前端先按约定接口 Mock 开发"
+  assumed_api_base: "http://localhost:8000/api/v1"
+  api_modules:
+    - module: "auth"
+      endpoints: ["POST /auth/login", "POST /auth/register", "POST /auth/logout"]
+    - module: "conversation"
+      endpoints: ["GET /conversations", "POST /conversations", "GET /conversations/:id/messages", "POST /conversations/:id/messages"]
+    - module: "rag"
+      endpoints: ["GET /documents", "POST /documents/upload", "DELETE /documents/:id", "POST /documents/search"]
+    - module: "training"
+      endpoints: ["GET /training/status", "GET /metrics"]
+
+performance_requirements:
+  page_load_time: "< 3s"
+  response_feedback: "< 500ms (loading indicator)"
+  concurrent_users: 10
+
+i18n:
+  status: "暂不需要，中文界面"
+  explicit_keys: []
+  inferred_keys: []
+
+risks:
+  - id: RISK-001
+    description: "后端 API 尚未实现，前端需基于 Mock 开发"
+    severity: P1
+    mitigation: "定义统一 API Schema，使用 MSW 进行 Mock"
+  - id: RISK-002
+    description: "流式生成（SSE/WebSocket）前端实现复杂度较高"
+    severity: P1
+    mitigation: "优先实现非流式版本，流式作为增强功能"
+
+gate:
+  verdict: "PASS_WITH_RISK"
+  mode: "minimal"
+  p0_missing: []
+  p1_missing:
+    - "接口定义尚未确定（后端未实现）"
+    - "埋点方案未定义"
+    - "灰度策略未定义（MVP 阶段可接受）"
+  open_questions:
+    - "流式生成用 SSE 还是 WebSocket？"
+    - "认证方案：JWT Token 存 localStorage 还是 Cookie？"
+  risks:
+    - "后端 API 未确定，前端基于 Mock 开发"
+  ambiguity_score:
+    business_goal_clarity: 85
+    interaction_completeness: 80
+    ac_testability: 90
+    data_contract_certainty: 50
+    overall: 76
+    confidence_level: "medium"

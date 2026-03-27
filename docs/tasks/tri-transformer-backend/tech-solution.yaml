@@ -1,0 +1,220 @@
+meta:
+  task_id: tri-transformer-backend
+  title: "Tri-Transformer 后端服务开发"
+  platform: backend
+  language: python
+  framework: fastapi
+  created_at: "2026-03-27"
+  requirement_version: "1.0.0"
+  scope: backend_only
+
+tech_stack:
+  language: python
+  python_version: "3.10+"
+  framework: fastapi
+  rag_engine: llamaindex
+  vector_db: chroma
+  embedding_model: BAAI/bge-large-zh-v1.5
+  reranker_model: BAAI/bge-reranker-large
+  metadata_db: postgresql
+  orm: sqlalchemy_async
+  auth: jwt_python_jose
+  doc_parser: pymupdf_unstructured
+  testing: pytest_asyncio
+  async_tasks: fastapi_background_tasks
+
+file_changes:
+  - path: backend/requirements.txt
+    action: add
+    description: "Python 依赖声明（fastapi/uvicorn/sqlalchemy/llamaindex/chromadb/sentence-transformers/python-jose/pymupdf等）"
+
+  - path: backend/pyproject.toml
+    action: add
+    description: "pytest 配置，asyncio_mode=auto"
+
+  - path: backend/.env.example
+    action: add
+    description: "环境变量示例（DB_URL/SECRET_KEY/MOCK_INFERENCE/MODEL_PATH等）"
+
+  - path: backend/app/main.py
+    action: add
+    description: "FastAPI 应用入口，注册路由、CORS 中间件、异常处理器"
+
+  - path: backend/app/core/config.py
+    action: add
+    description: "Pydantic BaseSettings 配置管理，读取环境变量"
+
+  - path: backend/app/core/database.py
+    action: add
+    description: "SQLAlchemy async 引擎与 session 工厂"
+
+  - path: backend/app/core/security.py
+    action: add
+    description: "JWT 工具函数（create_access_token/verify_token/hash_password/verify_password）"
+
+  - path: backend/app/models/user.py
+    action: add
+    description: "User SQLAlchemy ORM 模型（id/username/email/hashed_password/created_at）"
+
+  - path: backend/app/models/document.py
+    action: add
+    description: "Document ORM 模型（id/kb_id/filename/status/chunk_count/created_at）"
+
+  - path: backend/app/models/chat_session.py
+    action: add
+    description: "ChatSession/ChatMessage ORM 模型（session_id/user_id/messages/created_at）"
+
+  - path: backend/app/models/train_job.py
+    action: add
+    description: "TrainJob ORM 模型（id/job_type/status/config/created_at/updated_at）"
+
+  - path: backend/app/schemas/auth.py
+    action: add
+    description: "Pydantic Schema: RegisterRequest/LoginRequest/TokenResponse"
+
+  - path: backend/app/schemas/chat.py
+    action: add
+    description: "Pydantic Schema: CreateSessionRequest/SendMessageRequest/MessageResponse/HistoryResponse"
+
+  - path: backend/app/schemas/knowledge.py
+    action: add
+    description: "Pydantic Schema: DocumentResponse/SearchRequest/SearchResponse"
+
+  - path: backend/app/schemas/model.py
+    action: add
+    description: "Pydantic Schema: InferenceRequest/InferenceResponse"
+
+  - path: backend/app/schemas/train.py
+    action: add
+    description: "Pydantic Schema: TrainJobRequest/TrainJobResponse"
+
+  - path: backend/app/dependencies.py
+    action: add
+    description: "FastAPI 依赖注入：get_db/get_current_user/get_current_active_user"
+
+  - path: backend/app/api/v1/auth.py
+    action: add
+    description: "认证路由：POST /auth/register, POST /auth/login"
+
+  - path: backend/app/api/v1/knowledge.py
+    action: add
+    description: "知识库路由：POST /knowledge/documents(上传), GET /knowledge/documents(列表), DELETE /knowledge/documents/{id}, GET /knowledge/search"
+
+  - path: backend/app/api/v1/chat.py
+    action: add
+    description: "对话路由：POST /chat/sessions, POST /chat/sessions/{id}/messages, GET /chat/sessions/{id}/history"
+
+  - path: backend/app/api/v1/model.py
+    action: add
+    description: "推理路由：POST /model/inference"
+
+  - path: backend/app/api/v1/train.py
+    action: add
+    description: "训练路由：POST /train/jobs, GET /train/jobs/{id}, DELETE /train/jobs/{id}"
+
+  - path: backend/app/services/rag/document_processor.py
+    action: add
+    description: "文档解析与分块服务（PyMuPDF解析PDF/DOCX/MD，固定窗口分块，chunk_size可配置）"
+
+  - path: backend/app/services/rag/embedder.py
+    action: add
+    description: "BGE 嵌入服务（加载 bge-large-zh-v1.5，批量向量化文本）"
+
+  - path: backend/app/services/rag/vector_store.py
+    action: add
+    description: "Chroma 向量存储封装（collection创建/upsert/delete/query，按kb_id隔离）"
+
+  - path: backend/app/services/rag/retriever.py
+    action: add
+    description: "混合检索服务（向量检索+BM25，RRF融合，元数据过滤）"
+
+  - path: backend/app/services/rag/reranker.py
+    action: add
+    description: "BGE Reranker 重排服务（加载 bge-reranker-large，重排 Top-K 结果）"
+
+  - path: backend/app/services/chat/chat_service.py
+    action: add
+    description: "对话编排服务（会话CRUD，消息处理，串联RAG检索+推理完整链路）"
+
+  - path: backend/app/services/model/inference_service.py
+    action: add
+    description: "推理服务接口（抽象基类，支持真实/Mock两种实现，自动重试3次）"
+
+  - path: backend/app/services/model/mock_inference.py
+    action: add
+    description: "Mock 推理实现（无需GPU，返回模拟响应，用于开发测试）"
+
+  - path: backend/app/services/train/train_service.py
+    action: add
+    description: "训练调度服务（提交异步任务，状态追踪pending/running/completed/failed，支持取消）"
+
+  - path: backend/tests/conftest.py
+    action: add
+    description: "pytest fixtures（test db/async client/mock user/mock jwt）"
+
+  - path: backend/tests/test_auth.py
+    action: add
+    description: "认证模块测试（注册/登录/重复注册/无效凭证/JWT验证）"
+
+  - path: backend/tests/test_knowledge.py
+    action: add
+    description: "知识库管理测试（文档上传/列表/删除/权限隔离）"
+
+  - path: backend/tests/test_rag.py
+    action: add
+    description: "RAG 引擎测试（分块/嵌入Mock/检索/重排）"
+
+  - path: backend/tests/test_chat.py
+    action: add
+    description: "对话管理测试（会话创建/消息发送完整链路/历史查询）"
+
+  - path: backend/tests/test_model.py
+    action: add
+    description: "推理接口测试（Mock模式推理/参数验证/重试逻辑）"
+
+  - path: backend/tests/test_train.py
+    action: add
+    description: "训练调度测试（任务提交/状态查询/取消）"
+
+validation:
+  acceptance:
+    - "POST /api/v1/auth/register 返回 201，用户写入 DB"
+    - "POST /api/v1/auth/login 返回 JWT access_token"
+    - "未携带 token 访问受保护接口返回 401"
+    - "POST /api/v1/knowledge/documents 上传 PDF/DOCX/MD 成功"
+    - "上传后 GET /api/v1/knowledge/search 能检索到相关内容"
+    - "POST /api/v1/chat/sessions 创建会话成功"
+    - "POST /api/v1/chat/sessions/{id}/messages 返回包含来源引用的回复"
+    - "GET /api/v1/chat/sessions/{id}/history 返回历史消息列表"
+    - "POST /api/v1/model/inference 在 MOCK_INFERENCE=true 时正常返回"
+    - "POST /api/v1/train/jobs 提交任务返回 job_id，状态为 pending"
+    - "GET /api/v1/train/jobs/{id} 返回任务状态"
+    - "pytest tests/ 全部通过，覆盖率 >= 80%"
+
+  test_command: "cd backend && pytest tests/ -v --cov=app --cov-report=term-missing"
+
+risks:
+  - level: HIGH
+    description: "BGE 模型文件 ~1.3GB，开发环境可能不可用"
+    mitigation: "MOCK_INFERENCE=true 时不加载真实模型，embedder 使用 Mock 返回固定维度随机向量"
+
+  - level: HIGH
+    description: "Tri-Transformer 推理模型在无 GPU 环境不可运行"
+    mitigation: "inference_service.py 抽象基类 + mock_inference.py 实现，环境变量控制模式切换"
+
+  - level: MEDIUM
+    description: "PostgreSQL 异步迁移复杂性"
+    mitigation: "使用 alembic 管理迁移，测试环境使用 SQLite in-memory"
+
+  - level: MEDIUM
+    description: "文档处理阻塞 API 响应"
+    mitigation: "使用 FastAPI BackgroundTasks 异步处理，API 立即返回 202 + document_id"
+
+open_questions: []
+
+implementation_notes:
+  - "所有数据库查询必须携带 kb_id 过滤，确保多租户隔离"
+  - "嵌入服务和重排服务设计为单例（startup event 加载）"
+  - "测试环境使用 SQLite in-memory + Mock 嵌入（固定维度随机向量）"
+  - "文档分块 chunk_size/chunk_overlap 从 config.py 读取，默认 512/50"
+  - "推理失败使用指数退避重试，最多 3 次"

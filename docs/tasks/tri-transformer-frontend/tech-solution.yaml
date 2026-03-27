@@ -1,0 +1,417 @@
+meta:
+  task_id: tri-transformer-frontend
+  title: "Tri-Transformer 可控对话与 RAG 知识库增强系统 - Web 前端"
+  platform: web
+  version: "1"
+  requirement_version: "1"
+  requirement_confidence: "medium"
+  created_at: "2026-03-27"
+  tech_stack:
+    framework: "React 18 + TypeScript 5"
+    ui_library: "Ant Design 5.x"
+    state_management: "Zustand 4.x"
+    bundler: "Vite 5.x"
+    router: "React Router v6"
+    http_client: "Axios 1.x"
+    chart: "Recharts 2.x"
+    mock: "MSW 2.x"
+    testing: "Vitest + React Testing Library"
+    css: "CSS Modules + Ant Design tokens"
+    containerization: "Docker + Nginx"
+
+project_structure:
+  root: "frontend/"
+  dirs:
+    - "src/pages/         # 页面组件（路由级别）"
+    - "src/components/    # 可复用业务组件"
+    - "src/layouts/       # 布局组件"
+    - "src/store/         # Zustand Store"
+    - "src/api/           # Axios API 客户端"
+    - "src/hooks/         # 自定义 Hooks"
+    - "src/types/         # TypeScript 类型定义"
+    - "src/utils/         # 工具函数"
+    - "src/mocks/         # MSW Mock handlers"
+    - "src/assets/        # 静态资源"
+    - "src/test/          # 测试工具函数"
+
+routes:
+  - path: "/login"
+    component: "LoginPage"
+    auth_required: false
+  - path: "/register"
+    component: "RegisterPage"
+    auth_required: false
+  - path: "/"
+    component: "MainLayout"
+    auth_required: true
+    children:
+      - path: "/chat"
+        component: "ChatPage"
+        default: true
+      - path: "/documents"
+        component: "DocumentsPage"
+      - path: "/training"
+        component: "TrainingPage"
+      - path: "/metrics"
+        component: "MetricsPage"
+
+file_changes:
+  # 项目配置文件
+  - path: "frontend/package.json"
+    operation: add
+    description: "项目依赖配置"
+    dependencies:
+      - "react@^18.3.1"
+      - "react-dom@^18.3.1"
+      - "react-router-dom@^6.26.0"
+      - "antd@^5.20.0"
+      - "zustand@^4.5.5"
+      - "axios@^1.7.7"
+      - "recharts@^2.12.7"
+      - "msw@^2.4.9"
+
+  - path: "frontend/vite.config.ts"
+    operation: add
+    description: "Vite 构建配置，含开发代理、路径别名"
+
+  - path: "frontend/tsconfig.json"
+    operation: add
+    description: "TypeScript 配置"
+
+  - path: "frontend/index.html"
+    operation: add
+    description: "HTML 入口"
+
+  # 类型定义
+  - path: "frontend/src/types/api.ts"
+    operation: add
+    description: "API 响应类型定义（User, Conversation, Message, Document, Metrics）"
+
+  - path: "frontend/src/types/store.ts"
+    operation: add
+    description: "Store 状态类型定义"
+
+  # API 客户端
+  - path: "frontend/src/api/client.ts"
+    operation: add
+    description: "Axios 实例，含 token 拦截器、错误处理、401 重定向"
+
+  - path: "frontend/src/api/auth.ts"
+    operation: add
+    description: "认证 API（login, register, logout）"
+
+  - path: "frontend/src/api/conversations.ts"
+    operation: add
+    description: "对话 API（list, create, getMessages, sendMessage）"
+
+  - path: "frontend/src/api/documents.ts"
+    operation: add
+    description: "文档 API（list, upload, delete, search）"
+
+  - path: "frontend/src/api/training.ts"
+    operation: add
+    description: "训练与指标 API（getStatus, getMetrics）"
+
+  # Mock handlers
+  - path: "frontend/src/mocks/handlers/auth.ts"
+    operation: add
+    description: "认证 Mock（login/register 返回 token + user）"
+
+  - path: "frontend/src/mocks/handlers/conversations.ts"
+    operation: add
+    description: "对话 Mock（含消息列表、sources 引用）"
+
+  - path: "frontend/src/mocks/handlers/documents.ts"
+    operation: add
+    description: "文档 Mock（含上传进度、状态变更）"
+
+  - path: "frontend/src/mocks/handlers/training.ts"
+    operation: add
+    description: "训练状态与指标历史 Mock"
+
+  - path: "frontend/src/mocks/browser.ts"
+    operation: add
+    description: "MSW Browser worker 注册"
+
+  # Zustand Stores
+  - path: "frontend/src/store/authStore.ts"
+    operation: add
+    description: "认证 Store（user, token, login, logout, isAuthenticated）"
+
+  - path: "frontend/src/store/conversationStore.ts"
+    operation: add
+    description: "对话 Store（conversations, currentId, messages, sendMessage, loading）"
+
+  - path: "frontend/src/store/documentStore.ts"
+    operation: add
+    description: "文档 Store（documents, upload, delete, search, uploadProgress）"
+
+  - path: "frontend/src/store/metricsStore.ts"
+    operation: add
+    description: "指标 Store（metrics, trainingStatus, fetchMetrics, fetchStatus）"
+
+  # 布局
+  - path: "frontend/src/layouts/MainLayout.tsx"
+    operation: add
+    description: "主布局（Sider 导航 + Content 区域 + 认证守卫）"
+
+  - path: "frontend/src/layouts/AuthLayout.tsx"
+    operation: add
+    description: "认证布局（居中卡片样式）"
+
+  # 页面组件
+  - path: "frontend/src/pages/LoginPage.tsx"
+    operation: add
+    description: "登录页（表单 + 错误提示 + 跳转注册）"
+
+  - path: "frontend/src/pages/RegisterPage.tsx"
+    operation: add
+    description: "注册页（表单验证 + 成功跳转）"
+
+  - path: "frontend/src/pages/ChatPage.tsx"
+    operation: add
+    description: "对话主页（对话列表侧边栏 + 消息区域 + 输入区）"
+
+  - path: "frontend/src/pages/DocumentsPage.tsx"
+    operation: add
+    description: "知识库管理页（文档列表 + 上传 + 删除 + 检索测试）"
+
+  - path: "frontend/src/pages/TrainingPage.tsx"
+    operation: add
+    description: "训练监控页（阶段进度 + 实时状态）"
+
+  - path: "frontend/src/pages/MetricsPage.tsx"
+    operation: add
+    description: "性能指标页（检索准确率、BLEU、幻觉率趋势图）"
+
+  # 业务组件
+  - path: "frontend/src/components/chat/MessageList.tsx"
+    operation: add
+    description: "消息列表（用户/助手气泡 + 加载状态 + 自动滚动）"
+
+  - path: "frontend/src/components/chat/MessageBubble.tsx"
+    operation: add
+    description: "消息气泡（Markdown 渲染 + 来源引用折叠展示）"
+
+  - path: "frontend/src/components/chat/SourcePanel.tsx"
+    operation: add
+    description: "知识来源面板（文档名、段落、相关度分数）"
+
+  - path: "frontend/src/components/chat/ChatInput.tsx"
+    operation: add
+    description: "输入框（文本/文件上传 + 发送 + 快捷键）"
+
+  - path: "frontend/src/components/chat/ConversationList.tsx"
+    operation: add
+    description: "对话列表（历史对话 + 新建 + 导出）"
+
+  - path: "frontend/src/components/documents/DocumentList.tsx"
+    operation: add
+    description: "文档列表（状态Badge + 删除 + 分页）"
+
+  - path: "frontend/src/components/documents/UploadPanel.tsx"
+    operation: add
+    description: "文档上传（拖拽/点击 + 进度条 + 格式限制）"
+
+  - path: "frontend/src/components/documents/SearchTestPanel.tsx"
+    operation: add
+    description: "检索测试（输入查询 + 展示 Top-K 结果）"
+
+  - path: "frontend/src/components/metrics/MetricsChart.tsx"
+    operation: add
+    description: "指标趋势图（Recharts LineChart + 多指标切换）"
+
+  - path: "frontend/src/components/metrics/TrainingStatusCard.tsx"
+    operation: add
+    description: "训练状态卡片（阶段 + 进度 + ETA）"
+
+  - path: "frontend/src/components/common/LoadingSpinner.tsx"
+    operation: add
+    description: "通用加载组件"
+
+  - path: "frontend/src/components/common/ErrorBoundary.tsx"
+    operation: add
+    description: "错误边界组件"
+
+  - path: "frontend/src/components/common/EmptyState.tsx"
+    operation: add
+    description: "空态组件（可定制图标 + 文案 + 操作按钮）"
+
+  # Hooks
+  - path: "frontend/src/hooks/useAuth.ts"
+    operation: add
+    description: "认证 hook（从 authStore 派生，检查登录态）"
+
+  - path: "frontend/src/hooks/useConversation.ts"
+    operation: add
+    description: "对话 hook（发消息、切换对话、导出历史）"
+
+  - path: "frontend/src/hooks/useDocuments.ts"
+    operation: add
+    description: "文档 hook（上传、删除、搜索）"
+
+  # 工具函数
+  - path: "frontend/src/utils/formatDate.ts"
+    operation: add
+    description: "日期格式化工具"
+
+  - path: "frontend/src/utils/exportConversation.ts"
+    operation: add
+    description: "对话导出（JSON / Markdown 格式）"
+
+  # 测试文件
+  - path: "frontend/src/store/__tests__/authStore.test.ts"
+    operation: add
+    type: test
+    description: "authStore 单元测试（login/logout/状态变更）"
+
+  - path: "frontend/src/store/__tests__/conversationStore.test.ts"
+    operation: add
+    type: test
+    description: "conversationStore 单元测试（sendMessage/loading状态）"
+
+  - path: "frontend/src/store/__tests__/documentStore.test.ts"
+    operation: add
+    type: test
+    description: "documentStore 单元测试（upload/delete/search）"
+
+  - path: "frontend/src/components/chat/__tests__/MessageBubble.test.tsx"
+    operation: add
+    type: test
+    description: "MessageBubble 组件测试（渲染、来源展示）"
+
+  - path: "frontend/src/components/chat/__tests__/ChatInput.test.tsx"
+    operation: add
+    type: test
+    description: "ChatInput 组件测试（输入、发送、快捷键）"
+
+  - path: "frontend/src/components/documents/__tests__/UploadPanel.test.tsx"
+    operation: add
+    type: test
+    description: "UploadPanel 组件测试（上传流程、进度显示）"
+
+  - path: "frontend/src/utils/__tests__/exportConversation.test.ts"
+    operation: add
+    type: test
+    description: "exportConversation 工具函数测试"
+
+  # 应用入口
+  - path: "frontend/src/App.tsx"
+    operation: add
+    description: "应用根组件（路由 + Provider + MSW 初始化）"
+
+  - path: "frontend/src/main.tsx"
+    operation: add
+    description: "React 挂载入口"
+
+  # 部署配置
+  - path: "frontend/Dockerfile"
+    operation: add
+    description: "多阶段构建 Dockerfile（构建阶段 + Nginx 服务阶段）"
+
+  - path: "frontend/nginx.conf"
+    operation: add
+    description: "Nginx 配置（SPA fallback + API 代理）"
+
+  - path: "docker-compose.yml"
+    operation: add
+    description: "Docker Compose（frontend + backend + vector_db 服务）"
+
+api_contracts:
+  base_url: "http://localhost:8000/api/v1"
+  auth_header: "Authorization: Bearer {token}"
+  endpoints:
+    auth:
+      - method: POST
+        path: "/auth/login"
+        request: "{ username: string, password: string }"
+        response: "{ token: string, user: { id, username, email } }"
+        error: "401 invalid credentials"
+      - method: POST
+        path: "/auth/register"
+        request: "{ username: string, password: string, email: string }"
+        response: "{ user: { id, username, email } }"
+      - method: POST
+        path: "/auth/logout"
+        response: "{ message: string }"
+    conversation:
+      - method: GET
+        path: "/conversations"
+        response: "{ conversations: [{ id, title, createdAt, updatedAt }] }"
+      - method: POST
+        path: "/conversations"
+        request: "{ title?: string }"
+        response: "{ id: string, title: string, createdAt: string }"
+      - method: GET
+        path: "/conversations/:id/messages"
+        response: "{ messages: [{ id, role, content, sources, createdAt }] }"
+      - method: POST
+        path: "/conversations/:id/messages"
+        request: "{ content: string }"
+        response: "{ message: { id, role, content, sources, createdAt } }"
+    documents:
+      - method: GET
+        path: "/documents"
+        response: "{ documents: [{ id, name, type, size, status, createdAt }] }"
+      - method: POST
+        path: "/documents/upload"
+        request: "FormData (file)"
+        response: "{ id: string, name: string, status: 'processing' }"
+      - method: DELETE
+        path: "/documents/:id"
+        response: "{ message: string }"
+      - method: POST
+        path: "/documents/search"
+        request: "{ query: string, topK?: number }"
+        response: "{ results: [{ document, chunk, score }] }"
+    training:
+      - method: GET
+        path: "/training/status"
+        response: "{ phase: string, progress: number, eta: string, message: string }"
+      - method: GET
+        path: "/metrics"
+        response: "{ current: { retrievalAccuracy, bleuScore, hallucinationRate }, history: [{ timestamp, ...metrics }] }"
+
+validation:
+  acceptance:
+    - id: AC-001
+      description: "用户可发起多轮对话，系统保留上下文历史"
+      test_command: "vitest run src/store/__tests__/conversationStore.test.ts"
+    - id: AC-002
+      description: "每条回复显示对应知识来源引用"
+      test_command: "vitest run src/components/chat/__tests__/MessageBubble.test.tsx"
+    - id: AC-003
+      description: "用户可上传 PDF/Word/Markdown 文件并基于内容提问"
+      test_command: "vitest run src/components/documents/__tests__/UploadPanel.test.tsx"
+    - id: AC-004
+      description: "对话历史可保存并支持导出"
+      test_command: "vitest run src/utils/__tests__/exportConversation.test.ts"
+    - id: AC-005
+      description: "管理员可在知识库管理界面上传、删除文档"
+      test_command: "vitest run src/store/__tests__/documentStore.test.ts"
+    - id: AC-009
+      description: "支持用户登录/注册，对话数据与账号绑定"
+      test_command: "vitest run src/store/__tests__/authStore.test.ts"
+  test_command: "vitest run"
+  build_command: "cd frontend && npm run build"
+
+risks:
+  - id: RISK-001
+    description: "后端 API 未实现，用 MSW Mock 替代"
+    mitigation: "MSW handlers 定义所有接口，契约与后端对齐后直接切换"
+    severity: medium
+  - id: RISK-002
+    description: "流式生成（SSE）前端复杂度高"
+    mitigation: "MVP 先实现请求-响应模式，流式作 v2 增强"
+    severity: low
+  - id: RISK-003
+    description: "图表库 bundle 大小影响首屏性能"
+    mitigation: "Recharts 按需引入，lazy load MetricsPage"
+    severity: low
+
+open_questions:
+  - "流式生成协议：SSE 还是 WebSocket？（影响 ChatInput 实现）"
+  - "认证 token 存储方案：localStorage vs httpOnly Cookie？"
+  - "文档上传大小限制由前端还是后端控制？"
+
+reusable_assets: []

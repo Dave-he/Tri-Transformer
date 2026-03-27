@@ -1,0 +1,83 @@
+task_id: pytorch-model-skeleton
+title: "搭建 Tri-Transformer 模型骨架并在服务端集成 PyTorch 训练"
+platform: backend
+language: python
+version: "1.0.0"
+created_at: "2026-03-27"
+
+background: >
+  项目已有 FastAPI 后端基础架构（用户认证、RAG 知识库、训练任务调度 API）。
+  目前训练服务（TrainService）仅做任务入库，无实际 PyTorch 模型骨架与训练逻辑。
+  需要在服务端新增 Tri-Transformer 三分支模型骨架及 PyTorch 训练器，
+  通过后台任务驱动训练过程，并将训练指标写回数据库。
+
+functional_requirements:
+  - id: FR-01
+    title: "Tri-Transformer 模型骨架"
+    description: >
+      实现三分支 PyTorch 模型：
+      1. ITransformer（输入编码器）：TransformerEncoder + 位置编码；
+      2. CTransformer（控制中枢）：双向交叉注意力，生成控制信号；
+      3. OTransformer（输出解码器）：带因果掩码的 TransformerDecoder，
+         融合 I 分支编码与 C 分支控制信号；
+      4. TriTransformerModel 将三分支串联，对外暴露 forward() 方法。
+    acceptance_criteria:
+      - "TriTransformerModel 可用任意 batch/seq_len 张量完成一次前向传播"
+      - "C 分支控制信号正确注入 I/O 分支（交叉注意力）"
+      - "输出 logits 形状为 (batch, tgt_seq_len, vocab_size)"
+
+  - id: FR-02
+    title: "PyTorch 训练器（Trainer）"
+    description: >
+      实现 TriTransformerTrainer，支持：
+      1. 根据 job_type 选择训练阶段（stage1/stage2/stage3）；
+      2. 分阶段冻结参数（stage1 冻结 C 分支，stage2 解冻 C 分支冻结 I/O，stage3 全量）；
+      3. AdamW 优化器 + 余弦退火调度；
+      4. 每个 epoch 完成后通过回调更新训练指标（loss/epoch/progress）；
+      5. 支持通过 cancel_event 中止训练。
+    acceptance_criteria:
+      - "stage1 训练冻结 CTransformer 参数"
+      - "stage2 训练冻结 ITransformer + OTransformer 参数"
+      - "cancel_event 置位后训练在当前 epoch 结束时停止"
+      - "metrics_callback 每 epoch 被调用，携带 loss/epoch 信息"
+
+  - id: FR-03
+    title: "训练任务后台执行集成"
+    description: >
+      将 Trainer 集成到 FastAPI BackgroundTasks：
+      1. POST /train/jobs 提交任务后，立即启动 BackgroundTasks 后台任务；
+      2. 后台任务更新 job.status = running → completed/failed；
+      3. 后台任务将每 epoch 的 loss 写入 job.config 的 metrics 字段；
+      4. 支持 DELETE /train/jobs/{id} 发送取消信号中止训练。
+    acceptance_criteria:
+      - "提交任务后 job.status 最终变为 completed 或 failed"
+      - "job.config 中 metrics 字段记录各 epoch loss"
+      - "调用 DELETE 后 job.status 变为 cancelled"
+
+  - id: FR-04
+    title: "配置扩展"
+    description: >
+      在 Settings 中新增 PyTorch 训练相关配置：
+      d_model, num_heads, num_layers, vocab_size, max_seq_len,
+      train_epochs_default, train_lr_default, train_device。
+    acceptance_criteria:
+      - "Settings 可从环境变量读取 TRAIN_DEVICE=cuda/cpu"
+      - "TriTransformerModel 使用 Settings 中的超参数初始化"
+
+non_functional_requirements:
+  - "模型骨架仅依赖 torch，不引入 transformers 库（轻量）"
+  - "训练器在 CPU 环境可运行（TRAIN_DEVICE=cpu 时不报错）"
+  - "新增代码有对应的 pytest 单元测试"
+  - "不破坏现有测试（test_train.py 全部继续通过）"
+
+out_of_scope:
+  - "真实语料数据集加载（用随机 Tensor 模拟）"
+  - "LoRA/PEFT 参数高效微调（骨架阶段，全参数）"
+  - "模型权重持久化到磁盘（checkpoint）"
+  - "分布式训练（DeepSpeed/DDP）"
+  - "GPU 推理集成"
+
+constraints:
+  - "不修改现有 API 接口签名，仅扩展实现"
+  - "requirements.txt 新增 torch（CPU 版本）"
+  - "测试中使用极小模型（d_model=32, num_heads=2, num_layers=1）以加速"

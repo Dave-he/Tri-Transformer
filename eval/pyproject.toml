@@ -1,0 +1,10 @@
+[tool.pytest.ini_options]
+testpaths = ["eval/tests"]
+asyncio_mode = "auto"
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+
+[tool.black]
+line-length = 120
+target-version = ["py310"]

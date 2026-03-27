@@ -1,0 +1,136 @@
+meta:
+  task_id: pytorch-model-skeleton
+  title: "Tri-Transformer 模型骨架 + PyTorch 训练集成"
+  platform: backend
+  language: python
+  framework: fastapi
+  created_at: "2026-03-27"
+  requirement_version: "1.0.0"
+  requirement_confidence: high
+  scope: backend_model_training
+
+tech_stack:
+  language: python
+  python_version: "3.10+"
+  framework: fastapi
+  ml_framework: pytorch>=2.0.0
+  db: sqlite_aiosqlite
+  testing: pytest_asyncio
+
+file_changes:
+  - path: backend/requirements.txt
+    action: modify
+    description: "新增 torch>=2.0.0 依赖"
+
+  - path: backend/app/core/config.py
+    action: modify
+    description: "新增 PyTorch 训练超参数配置：d_model/num_heads/num_layers/vocab_size/max_seq_len/train_epochs_default/train_lr_default/train_device"
+
+  - path: backend/app/services/model/tri_transformer.py
+    action: add
+    description: "Tri-Transformer 三分支 PyTorch 模型骨架：PositionalEncoding/ITransformer/CTransformer/OTransformer/TriTransformerModel"
+
+  - path: backend/app/services/train/pytorch_trainer.py
+    action: add
+    description: "PyTorch 训练器 TriTransformerTrainer：分阶段参数冻结、AdamW+余弦退火、metrics_callback、cancel_event 支持"
+
+  - path: backend/app/services/train/train_service.py
+    action: modify
+    description: "扩展 TrainService：submit_job 接受 BackgroundTasks 参数，启动后台训练任务；add cancel signal 管理字典"
+
+  - path: backend/app/api/v1/train.py
+    action: modify
+    description: "扩展 submit_job 路由注入 BackgroundTasks，cancel_job 路由发送 cancel 信号"
+
+  - path: backend/tests/test_tri_transformer.py
+    action: add
+    description: "TriTransformerModel 单元测试：前向传播形状验证、C 分支信号注入、三种 stage 参数冻结验证"
+
+  - path: backend/tests/test_pytorch_trainer.py
+    action: add
+    description: "TriTransformerTrainer 单元测试：cancel_event 中止、metrics_callback 调用、参数冻结验证"
+
+architecture:
+  model:
+    ITransformer:
+      type: TransformerEncoder
+      inputs: [src_tokens, control_signal]
+      position_encoding: sinusoidal
+      description: "输入编码器，接受 C 分支控制信号通过残差注入"
+    CTransformer:
+      type: MultiheadAttention_bidirectional
+      inputs: [i_encoded, o_feedback]
+      description: "控制中枢，对 I 编码和 O 反馈做双向交叉注意力，生成控制向量"
+    OTransformer:
+      type: TransformerDecoder
+      inputs: [tgt_tokens, i_encoded, control_signal]
+      causal_mask: true
+      description: "输出解码器，融合 I 编码（memory）和 C 控制信号（cross-attn），自回归生成"
+    TriTransformerModel:
+      forward_signature: "(src, tgt) -> logits"
+      output_shape: "(batch, tgt_seq_len, vocab_size)"
+
+  training_stages:
+    stage1:
+      name: "lora_finetune"
+      frozen: [CTransformer]
+      description: "I/O 基础对话能力微调"
+    stage2:
+      name: "full_finetune"
+      frozen: [ITransformer, OTransformer]
+      description: "C 分支控制中枢训练"
+    stage3:
+      name: "rag_adapt"
+      frozen: []
+      description: "RAG 适配全量训练"
+
+  background_task_flow:
+    - "POST /train/jobs → TrainService.submit_job → DB写入(pending) → BackgroundTask.add_task"
+    - "后台任务: status=running → TriTransformerTrainer.train() → metrics_callback 更新 job.config"
+    - "训练完成: status=completed 或异常: status=failed"
+    - "DELETE /train/jobs/{id} → cancel_events[job_id].set() → 训练当前epoch后停止 → status=cancelled"
+
+  cancel_signal:
+    mechanism: "threading.Event 全局字典 _cancel_events: dict[str, threading.Event]"
+    lifecycle: "submit 时创建 → cancel 请求时 set() → 训练循环检查 is_set() → 训练结束时清理"
+
+  db_session_isolation:
+    problem: "BackgroundTask 不能复用请求 session（请求结束后 session 关闭）"
+    solution: "后台任务接受 AsyncSessionmaker 工厂，自行 async with session_factory() as db"
+
+validation:
+  acceptance:
+    - "TriTransformerModel(d_model=32, num_heads=2, num_layers=1) 前向传播不报错，输出 shape=(2,5,vocab_size)"
+    - "stage1 训练：CTransformer 参数 requires_grad=False"
+    - "stage2 训练：ITransformer/OTransformer 参数 requires_grad=False"
+    - "stage3 训练：所有参数 requires_grad=True"
+    - "cancel_event.set() 后训练在 ≤1 epoch 内停止"
+    - "metrics_callback 在每个 epoch 被调用，携带 {loss, epoch, total_epochs}"
+    - "POST /train/jobs 后 job.status 最终为 completed 或 failed（同步等待测试）"
+    - "DELETE /train/jobs/{id} 后 job.status 变为 cancelled"
+    - "pytest tests/ -v 全部通过（含现有测试）"
+
+  test_command: "cd backend && pytest tests/ -v -k 'not test_rag'"
+
+risks:
+  - level: HIGH
+    description: "torch 安装包较大（CPU 版 ~200MB），CI/CD 首次安装耗时"
+    mitigation: "requirements.txt 添加 torch>=2.0.0，推荐配置 pip cache；测试环境可使用 torch mock"
+
+  - level: MEDIUM
+    description: "BackgroundTask DB session 生命周期管理"
+    mitigation: "后台任务接收 session_factory（AsyncSessionmaker），不依赖请求 session"
+
+  - level: LOW
+    description: "threading.Event 与 asyncio 混用"
+    mitigation: "训练器运行在 BackgroundTask 线程中，threading.Event 是线程安全的"
+
+implementation_notes:
+  - "TriTransformerModel 超参数从 settings 读取，测试中用 d_model=32 覆盖"
+  - "CTransformer 双向交叉注意力：q=I_encoded, kv=O_feedback（O_feedback 初始为零向量）"
+  - "训练数据使用随机 Tensor（torch.randint for src/tgt），不依赖真实数据集"
+  - "metrics 写入 job.config 的 metrics 字段（JSON 格式：{metrics: [{epoch, loss}]}）"
+  - "cancel_events 为模块级字典，避免依赖注入复杂性"
+  - "PyTorch 版本：torch>=2.0.0（CPU 版，兼容 sentence-transformers 已有依赖）"
+
+open_questions: []

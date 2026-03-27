@@ -1,0 +1,374 @@
+meta:
+  task_id: tri-transformer-eval
+  title: "Tri-Transformer 目标函数与验证体系（Agent 自主 Ground Truth 发现）"
+  platform: backend
+  language: python
+  framework: pytorch_huggingface
+  created_at: "2026-03-27"
+  requirement_version: "1.0.0"
+  scope: evaluation_and_loss_functions
+
+tech_stack:
+  language: python
+  python_version: "3.10+"
+  ml_framework: pytorch
+  transformers: huggingface_transformers
+  rag_framework: llamaindex
+  vector_db: chroma
+  embedding_model: BAAI/bge-large-zh-v1.5
+  reranker_model: BAAI/bge-reranker-large
+  nli_model: cross-encoder/nli-deberta-v3-base
+  eval_framework:
+    - ragas
+    - deepeval
+    - evaluate_huggingface
+    - bert_score
+  testing: pytest
+  ci: github_actions
+
+design_overview:
+  architecture: >
+    整体分为三个子系统：
+    (1) LossHub：目标函数注册中心，管理所有损失函数模块；
+    (2) GroundTruthEngine：Agent 自主 GT 构建引擎，四条路径产生多源 GT；
+    (3) EvalPipeline：自动化评估流水线，集成多维度指标体系与 CI Gate。
+
+  core_flows:
+    - name: 目标函数前向传播
+      steps:
+        - "输入：查询 q, 检索结果 docs, 生成回复 y, 控制信号 c"
+        - "RAG 损失计算：L_rag = α·L_recall + β·L_coverage + γ·L_ndcg"
+        - "控制对齐损失：L_ctrl = λ₁·L_contrastive + λ₂·L_nli + λ₃·L_inst"
+        - "幻觉抑制损失：L_hall = μ₁·L_fact + μ₂·L_attr + μ₃·L_abstain"
+        - "总损失：L_total = w1·L_rag + w2·L_ctrl + w3·L_hall"
+        - "反向传播更新模型参数"
+
+    - name: Agent GT 构建流程
+      steps:
+        - "Step1: 文档分块预处理（reuse 现有 RAG 分块逻辑）"
+        - "Step2: LLM 生成问答对（DocumentQAGenerator）"
+        - "Step3: 双模型交叉验证（DualModelValidator：模型A+模型B）"
+        - "Step4: 知识图谱 Triple 提取（KGTripleExtractor）"
+        - "Step5: 对比一致性验证（ConsistencyChecker：多轮追问）"
+        - "Step6: 多源融合与质量打分（GTFusionEngine）"
+        - "Step7: 难度分级（EasyMediumHardClassifier）"
+        - "Step8: 持久化存储（JSON Lines + HF Dataset 格式）"
+
+    - name: Evaluation Pipeline 执行
+      steps:
+        - "Step1: 加载 Ground Truth 数据集"
+        - "Step2: 运行 RAG 评估（faithfulness/answer_relevancy/context_recall via RAGAS）"
+        - "Step3: 运行生成质量评估（BLEU-4/ROUGE-L/BERTScore/METEOR）"
+        - "Step4: 运行控制性评估（InstructionFollowingEvaluator）"
+        - "Step5: 运行幻觉评估（HallucinationEvaluator）"
+        - "Step6: 运行对话连贯性评估（DialogCohesionEvaluator）"
+        - "Step7: Bootstrap 置信区间计算"
+        - "Step8: 生成 JSON + Markdown 双格式报告"
+        - "Step9: CI Gate 判定（通过/阻断）"
+
+file_changes:
+  - path: eval/requirements.txt
+    action: add
+    description: "评估模块依赖（ragas/deepeval/evaluate/bert-score/rouge-score/nltk/sentence-transformers/spacy/torch）"
+
+  - path: eval/pyproject.toml
+    action: add
+    description: "pytest 配置，asyncio_mode=auto，测试目录配置"
+
+  - path: eval/config.yaml
+    action: add
+    description: "评估配置（模型路径/损失权重/CI Gate 阈值/GT 构建参数）"
+
+  - path: eval/loss/__init__.py
+    action: add
+    description: "LossHub 入口，注册并导出所有损失函数"
+
+  - path: eval/loss/base.py
+    action: add
+    description: "BaseLoss 抽象基类，定义 forward()/compute()/get_metrics() 接口"
+
+  - path: eval/loss/rag_loss.py
+    action: add
+    description: >
+      RAG 检索质量目标函数模块：
+      - RetrievalRelevanceLoss：Recall@K（K=1,3,5,10），支持批处理
+      - CoverageLoss：F1-Token Overlap + BERTScore 混合
+      - RankingConsistencyLoss：NDCG@K + MRR 可微分实现
+      - RAGLoss：三者加权合并（α/β/γ 可配置）
+
+  - path: eval/loss/control_alignment_loss.py
+    action: add
+    description: >
+      C 分支控制对齐目标函数：
+      - ContrastiveControlLoss：正负样本对对比学习，InfoNCE 损失
+      - KnowledgeConsistencyLoss：NLI 模型检测蕴含/矛盾，DeBERTa-NLI
+      - InstructionFollowingLoss：分类头（BCE）+ 回归头（MSE）双形式
+      - ControlAlignmentLoss：三者加权合并（λ₁/λ₂/λ₃ 可配置）
+
+  - path: eval/loss/hallucination_loss.py
+    action: add
+    description: >
+      幻觉抑制目标函数：
+      - FactualHallucinationLoss：基于检索的事实核查，FactScore 方法
+      - SourceAttributionLoss：Attention Weight 分析，片段级来源归因
+      - AbstentionCalibrationLoss：置信度阈值 BCE 损失，知识缺失时惩罚生成
+      - HallucinationLoss：三者加权合并（μ₁/μ₂/μ₃ 可配置）
+
+  - path: eval/loss/total_loss.py
+    action: add
+    description: "TotalLoss：合并 RAGLoss + ControlAlignmentLoss + HallucinationLoss，w1/w2/w3 可配置，支持梯度流验证"
+
+  - path: eval/ground_truth/__init__.py
+    action: add
+    description: "GroundTruthEngine 入口"
+
+  - path: eval/ground_truth/schema.py
+    action: add
+    description: >
+      Ground Truth 统一 Schema（Pydantic BaseModel）：
+      - GroundTruthItem：id/query/answer/source_docs/difficulty/quality_score/source_type/metadata
+      - GroundTruthDataset：items + version + stats
+      - SourceType Enum：DOCUMENT_QA / DUAL_MODEL / KG_TRIPLE / HUMAN
+
+  - path: eval/ground_truth/document_qa_generator.py
+    action: add
+    description: >
+      文档内置事实挖掘：
+      - DocumentQAGenerator：输入文档块，输出问答对
+      - 使用本地 LLM（Qwen/Llama）生成问题，再生成答案
+      - 覆盖率保证：每 1000 字 ≥ 5 个问答对
+      - 质量过滤：过短/重复/无实质信息的 QA 自动淘汰
+
+  - path: eval/ground_truth/dual_model_validator.py
+    action: add
+    description: >
+      双大模型交叉验证：
+      - DualModelValidator：两个独立模型各自生成答案
+      - 语义相似度检测（BGE 嵌入）：相似度 ≥ 0.85 → Gold GT
+      - 分歧处理：相似度 < 0.85 → 降级为 Silver GT 或丢弃
+      - 支持 ModelA/ModelB 可配置（本地模型或 API）
+
+  - path: eval/ground_truth/kg_triple_extractor.py
+    action: add
+    description: >
+      知识图谱 Triple 提取：
+      - KGTripleExtractor：从文档中提取 (主体, 关系, 客体) 三元组
+      - 基于 spaCy NER + 依存分析 + 开源 RE 模型
+      - 支持中英文双语
+      - Triple 转化为 QA 对（如：主体的关系是什么？→ 客体）
+
+  - path: eval/ground_truth/consistency_checker.py
+    action: add
+    description: >
+      对比一致性验证：
+      - ConsistencyChecker：多轮追问验证 GT 自洽性
+      - 自动生成反问（如：真的确定 X 的 Y 是 Z 吗？）
+      - NLI 检测正向问答与反问的一致性
+      - 矛盾样本自动过滤，保留比例 ≥ 70%
+
+  - path: eval/ground_truth/fusion_engine.py
+    action: add
+    description: >
+      多源融合与质量打分：
+      - GTFusionEngine：合并四种来源的 GT
+      - 质量分计算：语义多样性 + 覆盖广度 + 难度分布
+      - 来源权重：Human(1.0) > Dual-Model(0.85) > Single-Model(0.6)
+      - 难度分级：EasyMediumHardClassifier（基于问题复杂度+答案长度）
+      - 导出：JSON Lines + HuggingFace Dataset 双格式
+
+  - path: eval/ground_truth/gt_versioning.py
+    action: add
+    description: "GT 版本管理：哈希版本号，支持增量更新与历史回溯，存储在 eval/data/gt_versions/"
+
+  - path: eval/pipeline/__init__.py
+    action: add
+    description: "EvalPipeline 入口"
+
+  - path: eval/pipeline/rag_evaluator.py
+    action: add
+    description: >
+      RAG 质量评估：
+      - RAGEvaluator：封装 RAGAS 框架
+      - 指标：faithfulness / answer_relevancy / context_recall / context_precision
+      - 支持批量评估，Bootstrap 置信区间
+
+  - path: eval/pipeline/generation_evaluator.py
+    action: add
+    description: >
+      生成质量评估：
+      - GenerationEvaluator：BLEU-4 / ROUGE-L / BERTScore F1 / METEOR
+      - 基于 HuggingFace evaluate 库
+      - 支持中文分词（jieba）
+
+  - path: eval/pipeline/control_evaluator.py
+    action: add
+    description: >
+      控制性评估：
+      - ControlEvaluator：指令遵循率 / 主题一致性 / 风格一致性
+      - 指令遵循：NLI 模型判断生成是否满足系统 prompt 约束
+      - 主题一致性：生成与查询的主题相似度（BGE 嵌入余弦相似度）
+
+  - path: eval/pipeline/hallucination_evaluator.py
+    action: add
+    description: >
+      幻觉评估：
+      - HallucinationEvaluator：FactScore + 知识库覆盖率 + 来源追溯
+      - 幻觉率：每条生成中无法归因到知识库的事实声明比例
+      - 来源追溯成功率：能追溯到具体文档片段的比例
+
+  - path: eval/pipeline/dialog_evaluator.py
+    action: add
+    description: >
+      对话连贯性评估：
+      - DialogCohesionEvaluator：多轮对话一致性 / 上下文保持率
+      - 检测对话中的矛盾陈述与主题漂移
+
+  - path: eval/pipeline/eval_pipeline.py
+    action: add
+    description: >
+      端到端评估流水线：
+      - EvalPipeline：串联所有 Evaluator
+      - 支持单条 / 批量 / 数据集级三种模式
+      - Bootstrap 置信区间（n=1000 次采样）
+      - 自动生成 JSON + Markdown 双格式报告
+      - CI Gate 判定逻辑（Hallucination Rate/RAG Recall@5/BERTScore F1）
+
+  - path: eval/pipeline/ci_gate.py
+    action: add
+    description: >
+      CI 质量门禁：
+      - CIGate：加载评估报告，判断是否通过 CI Gate
+      - 阈值：Hallucination Rate < 0.05，RAG Recall@5 > 0.90，BERTScore F1 > 0.85
+      - 通过：exit code 0；失败：exit code 1 + 详细失败原因
+      - 支持阈值通过 config.yaml 覆盖
+
+  - path: eval/pipeline/report_generator.py
+    action: add
+    description: >
+      报告生成：
+      - ReportGenerator：输入各 Evaluator 结果，输出标准化报告
+      - JSON 格式：完整数值结果 + 置信区间
+      - Markdown 格式：可读性报告 + 指标趋势（Mermaid 图）
+
+  - path: eval/scripts/build_ground_truth.py
+    action: add
+    description: "GT 构建脚本：一键运行 GroundTruthEngine，支持命令行参数（--docs_dir/--output_dir/--num_samples）"
+
+  - path: eval/scripts/run_eval.py
+    action: add
+    description: "评估运行脚本：一键运行 EvalPipeline，支持 --mode (single/batch/dataset) / --gt_file / --output_dir"
+
+  - path: eval/scripts/ci_check.py
+    action: add
+    description: "CI Gate 检查脚本：读取最新评估报告，运行 CIGate，退出码 0/1"
+
+  - path: eval/tests/test_rag_loss.py
+    action: add
+    description: >
+      RAGLoss 单元测试：
+      - test_recall_at_k：验证 Recall@1/3/5/10 计算正确性
+      - test_coverage_loss：验证 F1-Token Overlap 极端情况（全匹配/零匹配）
+      - test_ndcg_ranking：验证 NDCG 排序一致性
+      - test_rag_loss_differentiable：验证损失可微分（backward 不报错）
+
+  - path: eval/tests/test_control_alignment_loss.py
+    action: add
+    description: >
+      ControlAlignmentLoss 单元测试：
+      - test_contrastive_loss：正样本相似度 > 负样本相似度
+      - test_nli_consistency：知识蕴含 → 低损失，矛盾 → 高损失
+      - test_instruction_following：遵循指令 → 高分，违反 → 低分
+      - test_weighted_combination：权重配置有效
+
+  - path: eval/tests/test_hallucination_loss.py
+    action: add
+    description: >
+      HallucinationLoss 单元测试：
+      - test_factual_hallucination：有事实支撑 → 低损失，无支撑 → 高损失
+      - test_source_attribution：能追溯来源 → 低损失
+      - test_abstention：知识缺失时拒答 → 低损失，强行生成 → 高损失
+
+  - path: eval/tests/test_ground_truth_engine.py
+    action: add
+    description: >
+      GT 构建引擎测试：
+      - test_document_qa_generation：给定文档块，生成 ≥ 5 个 QA（per 1000 字）
+      - test_dual_model_validation：两模型共识判断正确
+      - test_kg_triple_extraction：Triple 格式正确，准确率 ≥ 90%
+      - test_consistency_checker：矛盾样本被正确过滤
+      - test_fusion_quality_score：融合后难度分级正确
+      - test_gt_versioning：版本号变更，历史可回溯
+
+  - path: eval/tests/test_eval_pipeline.py
+    action: add
+    description: >
+      Evaluation Pipeline 集成测试：
+      - test_rag_evaluator：RAG 指标计算正确
+      - test_generation_evaluator：BLEU/ROUGE/BERTScore 数值合理
+      - test_hallucination_evaluator：幻觉率计算正确
+      - test_ci_gate_pass：满足阈值时 exit code 0
+      - test_ci_gate_fail：不满足阈值时 exit code 1
+
+  - path: eval/docker/Dockerfile
+    action: add
+    description: "评估模块 Docker 镜像，基于 python:3.10-slim，安装 CPU 版 PyTorch"
+
+  - path: eval/docker/docker-compose.yml
+    action: add
+    description: "评估服务 Docker Compose，挂载 docs/ 和 eval/data/ 目录"
+
+  - path: .github/workflows/eval-ci.yml
+    action: add
+    description: "GitHub Actions：训练完成后自动触发评估，CI Gate 失败则阻断 PR"
+
+validation:
+  acceptance:
+    - id: AC-01
+      description: "GT 自动构建：从 10 个文档块生成 ≥ 50 条 GT，无人工介入"
+      test_command: "pytest eval/tests/test_ground_truth_engine.py -v"
+    - id: AC-02
+      description: "RAGLoss 可微分：backward() 不报错，gradient norm > 0"
+      test_command: "pytest eval/tests/test_rag_loss.py::test_rag_loss_differentiable -v"
+    - id: AC-03
+      description: "ControlAlignmentLoss：正负样本对比损失符合预期方向"
+      test_command: "pytest eval/tests/test_control_alignment_loss.py -v"
+    - id: AC-04
+      description: "幻觉率计算：有参考 vs 无参考损失值差异 > 0.1"
+      test_command: "pytest eval/tests/test_hallucination_loss.py -v"
+    - id: AC-05
+      description: "EvalPipeline 一键运行，1000 条样本 < 5min（CPU 模式）"
+      test_command: "pytest eval/tests/test_eval_pipeline.py -v"
+    - id: AC-06
+      description: "CI Gate：Hallucination Rate < 0.05 → exit 0；> 0.05 → exit 1"
+      test_command: "pytest eval/tests/test_eval_pipeline.py::test_ci_gate_pass eval/tests/test_eval_pipeline.py::test_ci_gate_fail -v"
+    - id: AC-07
+      description: "Docker 一键启动，eval pipeline 正常运行"
+      test_command: "docker compose -f eval/docker/docker-compose.yml up --build --exit-code-from eval"
+
+  ci_gate:
+    hallucination_rate_threshold: 0.05
+    rag_recall_at_5_threshold: 0.90
+    bert_score_f1_threshold: 0.85
+
+  performance:
+    eval_throughput: "1000 samples < 5min (GPU) / < 15min (CPU)"
+    gt_build_throughput: "100 docs → 500 GT samples < 30min"
+
+risks:
+  - risk: "本地 LLM 生成 QA 质量不稳定"
+    mitigation: "双模型交叉验证 + 质量打分过滤，保留分数 ≥ 0.7 的样本"
+    level: medium
+
+  - risk: "NLI 模型（DeBERTa）中文支持有限"
+    mitigation: "使用 cross-encoder/nli-deberta-v3-base（多语言版），降级时用 BGE 相似度替代"
+    level: medium
+
+  - risk: "RAGAS 库版本兼容性"
+    mitigation: "在 requirements.txt 锁定版本，e2e 测试覆盖 RAGAS 接口"
+    level: low
+
+  - risk: "CPU-only 模式下 BERTScore 计算慢"
+    mitigation: "批处理 + 缓存机制，BERTScore 支持 rescale_with_baseline 加速"
+    level: low
+
+open_questions: []
