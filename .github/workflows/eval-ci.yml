@@ -1,0 +1,118 @@
+name: Eval CI Gate
+
+on:
+  push:
+    branches: [main, dev]
+    paths:
+      - "eval/**"
+      - "backend/app/model/**"
+  pull_request:
+    branches: [main]
+    paths:
+      - "eval/**"
+      - "backend/app/model/**"
+  workflow_dispatch:
+
+jobs:
+  eval-unit-tests:
+    name: Eval Unit Tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+          cache: "pip"
+
+      - name: Install dependencies
+        run: |
+          pip install torch==2.1.0+cpu -f https://download.pytorch.org/whl/torch_stable.html
+          pip install -r eval/requirements.txt
+
+      - name: Download spaCy model
+        run: python -m spacy download en_core_web_sm
+
+      - name: Run eval unit tests
+        run: pytest eval/tests/ -v --tb=short --junitxml=eval-test-results.xml
+
+      - name: Upload test results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: eval-test-results
+          path: eval-test-results.xml
+
+  eval-ci-gate:
+    name: Eval CI Gate Check
+    runs-on: ubuntu-latest
+    needs: eval-unit-tests
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+          cache: "pip"
+
+      - name: Install dependencies
+        run: |
+          pip install torch==2.1.0+cpu -f https://download.pytorch.org/whl/torch_stable.html
+          pip install -r eval/requirements.txt
+
+      - name: Download spaCy model
+        run: python -m spacy download en_core_web_sm
+
+      - name: Build Ground Truth (smoke test with 10 samples)
+        run: |
+          mkdir -p eval/data/reports
+          python eval/scripts/build_ground_truth.py \
+            --docs_dir docs \
+            --output_dir eval/data \
+            --num_samples 10
+        continue-on-error: true
+
+      - name: Run Evaluation Pipeline
+        run: |
+          python eval/scripts/run_eval.py \
+            --mode batch \
+            --gt_file eval/data/ground_truth.jsonl \
+            --output_dir eval/data/reports
+        continue-on-error: true
+
+      - name: CI Gate Decision
+        run: |
+          python eval/scripts/ci_check.py \
+            --report_dir eval/data/reports
+        id: ci_gate
+
+      - name: Upload eval report
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: eval-report-${{ github.run_number }}
+          path: |
+            eval/data/reports/eval_report.json
+            eval/data/reports/eval_report.md
+          retention-days: 90
+
+      - name: Comment PR with eval results
+        if: github.event_name == 'pull_request' && always()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const reportPath = 'eval/data/reports/eval_report.md';
+            if (fs.existsSync(reportPath)) {
+              const report = fs.readFileSync(reportPath, 'utf8');
+              github.rest.issues.createComment({
+                issue_number: context.issue.number,
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                body: `## Eval CI Gate Report\n\n${report}`
+              });
+            }

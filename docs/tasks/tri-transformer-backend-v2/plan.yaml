@@ -1,0 +1,171 @@
+plan:
+  meta:
+    task_id: tri-transformer-backend-v2
+    source_tech_doc: "docs/tasks/tri-transformer-backend-v2/tech-solution.yaml"
+    scope: "P0|P1"
+    test_coverage_target: 80
+    min_tests_per_feature: 3
+    platform: backend
+    language: python
+
+  commands:
+    test: "cd backend && pytest tests/ -v --cov=app --cov-report=term-missing"
+    lint: "cd backend && black --check app/ tests/ && flake8 app/ tests/"
+    typecheck: ""
+
+  tasks:
+    - id: "T1-1"
+      priority: "P0"
+      type: "test"
+      title: "为 LoraAdapter 编写单元测试"
+      test_type: "pure"
+      file: "backend/tests/test_pluggable_llm.py"
+      given: "一个 nn.Linear(64, 64) 层"
+      when: "用 LoraAdapter 包装并前向传播"
+      then:
+        - "forward 输出 shape 与原始 linear 相同"
+        - "底座权重 requires_grad=False（freeze_base=True 时）"
+        - "A/B 矩阵 requires_grad=True"
+        - "可训练参数量 < 底座参数量 × 5%"
+      depends_on: []
+
+    - id: "T1-2"
+      priority: "P0"
+      type: "test"
+      title: "为 PluggableLLMAdapter 编写单元测试"
+      test_type: "pure"
+      file: "backend/tests/test_pluggable_llm.py"
+      given: "一个 Mock 小型 TransformerEncoder（d_model=64）"
+      when: "用 PluggableLLMAdapter 注入到 ITransformer 并前向传播"
+      then:
+        - "forward 输出 shape 正确（B, S, d_model）"
+        - "inject_lora=True 时所有底座 Linear 被 LoraAdapter 包装"
+        - "梯度可反传不报错"
+      depends_on: ["T1-1"]
+
+    - id: "P0-1"
+      priority: "P0"
+      type: "code"
+      title: "实现 LoraAdapter 和 PluggableLLMAdapter"
+      files:
+        - "backend/app/model/lora_adapter.py"
+        - "backend/app/model/pluggable_llm.py"
+      depends_on: ["T1-1", "T1-2"]
+      definition_of_done:
+        - "LoraAdapter: W' = W + BA，B 初始零，A 正态初始化"
+        - "freeze_base=True 时底座 requires_grad=False"
+        - "PluggableLLMAdapter.inject_into(branch) 替换分支层"
+        - "测试全部通过"
+
+    - id: "T2-1"
+      priority: "P0"
+      type: "test"
+      title: "为多模态 Tokenizer 编写单元测试"
+      test_type: "pure"
+      file: "backend/tests/test_tokenizer.py"
+      given: "各模态输入（文本字符串/音频帧数组/PIL Image bytes）"
+      when: "调用对应 Tokenizer 编码"
+      then:
+        - "TextTokenizer.encode() 返回 list[int]"
+        - "AudioTokenizer.encode() 返回 ID 全部在 [130000, 134000]"
+        - "VisionTokenizer.encode() 返回 ID 全部在 [135000, 145000]"
+        - "UnifiedTokenizer.encode_mixed() 合并序列无越界"
+        - "各模态 Token ID 区间互不重叠"
+        - "特殊 Token <|audio_start|>/<|vision_start|>/<|interrupt|> ID 可查"
+      depends_on: []
+
+    - id: "P0-2"
+      priority: "P0"
+      type: "code"
+      title: "实现多模态统一 Tokenizer"
+      files:
+        - "backend/app/model/tokenizer/__init__.py"
+        - "backend/app/model/tokenizer/text_tokenizer.py"
+        - "backend/app/model/tokenizer/audio_tokenizer.py"
+        - "backend/app/model/tokenizer/vision_tokenizer.py"
+        - "backend/app/model/tokenizer/unified_tokenizer.py"
+      depends_on: ["T2-1"]
+      definition_of_done:
+        - "TextTokenizer fallback char-level mock（无需真实 HF tokenizer）"
+        - "AudioTokenizer: frames→offset+hash % 4000 + 130000"
+        - "VisionTokenizer: bytes→offset+hash % 10000 + 135000"
+        - "UnifiedTokenizer 注册 3 个特殊 Token，encode_mixed 合并"
+        - "所有 Tokenizer 测试通过"
+
+    - id: "T3-1"
+      priority: "P0"
+      type: "test"
+      title: "为 StreamingEngine 和 WebSocket 端点编写测试"
+      test_type: "pure"
+      file: "backend/tests/test_stream.py"
+      given: "已认证用户的 JWT token，Mock 推理服务"
+      when: "通过 Starlette TestClient 建立 WebSocket 连接"
+      then:
+        - "WebSocket 连接建立成功（有效 JWT）"
+        - "无效 JWT 连接立即关闭（code=4001）"
+        - "发送 text 消息后收到多条 token 流式消息"
+        - "收到 interrupt 消息后收到 done=true + interrupted=true"
+        - "连接正常关闭后无资源泄漏"
+      depends_on: []
+
+    - id: "P0-3"
+      priority: "P0"
+      type: "code"
+      title: "实现 StreamingEngine 和 WebSocket 路由"
+      files:
+        - "backend/app/services/model/stream_engine.py"
+        - "backend/app/api/v1/stream.py"
+        - "backend/app/main.py"
+      depends_on: ["T3-1"]
+      definition_of_done:
+        - "StreamingEngine.generate() 为 async generator，Mock 逐字符推送"
+        - "WebSocket 路由 /api/v1/model/stream，query param token= 鉴权"
+        - "interrupt 消息设置 interrupt_event，生成器检测后立即 return"
+        - "main.py 注册 stream router 前缀 /api/v1/model"
+        - "WebSocket 测试全部通过"
+
+    - id: "T4-1"
+      priority: "P0"
+      type: "test"
+      title: "为 FactChecker 和幻觉阻断集成编写测试"
+      test_type: "pure"
+      file: "backend/tests/test_fact_checker.py"
+      given: "FactChecker（Mock embedding），已认证用户，对话会话"
+      when: "调用 FactChecker 和对话消息接口"
+      then:
+        - "相同文本 check() 返回 score ≈ 1.0，hallucination_detected=False"
+        - "完全不同文本 check() hallucination_detected=True（Mock 随机向量触发）"
+        - "FactCheckResult 包含 score: float 和 hallucination_detected: bool"
+        - "POST /chat/.../messages 响应包含 hallucination_detected 字段"
+      depends_on: []
+
+    - id: "P0-4"
+      priority: "P0"
+      type: "code"
+      title: "实现 FactChecker 并集成到对话链路"
+      files:
+        - "backend/app/services/model/fact_checker.py"
+        - "backend/app/schemas/chat.py"
+        - "backend/app/services/chat/chat_service.py"
+        - "backend/app/models/chat_session.py"
+      depends_on: ["T4-1"]
+      definition_of_done:
+        - "FactChecker Mock: embedding 用 hashlib 种子随机向量，相同文本 score=1.0"
+        - "MessageResponse 新增 hallucination_detected: bool = False"
+        - "ChatMessage ORM 新增 hallucination_detected 列（默认 False）"
+        - "chat_service.send_message() 调用 FactChecker 并写入结果"
+        - "已有 80 个测试仍然通过（向后兼容）"
+        - "新增测试全部通过"
+
+  acceptance:
+    - "pytest tests/ 全部通过（含已有 80 个 + 新增 >= 20 个）"
+    - "覆盖率 >= 80%"
+    - "LoRA 可训练参数量 < 底座参数量 5%"
+    - "AudioTokenizer Token ID 全部在 [130000, 134000]"
+    - "VisionTokenizer Token ID 全部在 [135000, 145000]"
+    - "WebSocket 流式测试通过"
+    - "POST /chat messages 响应包含 hallucination_detected 字段"
+
+  rollback:
+    - "所有修改文件（main.py/schemas/chat.py/chat_service.py/chat_session.py）均向后兼容"
+    - "新增字段有默认值，已有测试无需修改"

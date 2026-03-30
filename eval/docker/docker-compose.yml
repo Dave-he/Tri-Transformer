@@ -1,0 +1,41 @@
+version: "3.9"
+
+services:
+  eval:
+    build:
+      context: ../..
+      dockerfile: eval/docker/Dockerfile
+    image: tri-transformer-eval:latest
+    container_name: tri-transformer-eval
+    environment:
+      - PYTHONPATH=/app
+      - DEVICE=cpu
+    volumes:
+      - ../../docs:/app/docs:ro
+      - ../../eval/data:/app/eval/data
+    command: ["python", "eval/scripts/run_eval.py", "--mode", "batch", "--gt_file", "eval/data/ground_truth.jsonl", "--output_dir", "eval/data/reports"]
+
+  build-gt:
+    build:
+      context: ../..
+      dockerfile: eval/docker/Dockerfile
+    image: tri-transformer-eval:latest
+    container_name: tri-transformer-build-gt
+    environment:
+      - PYTHONPATH=/app
+    volumes:
+      - ../../docs:/app/docs:ro
+      - ../../eval/data:/app/eval/data
+    command: ["python", "eval/scripts/build_ground_truth.py", "--docs_dir", "docs", "--output_dir", "eval/data", "--num_samples", "500"]
+
+  ci-check:
+    build:
+      context: ../..
+      dockerfile: eval/docker/Dockerfile
+    image: tri-transformer-eval:latest
+    container_name: tri-transformer-ci-check
+    environment:
+      - PYTHONPATH=/app
+    volumes:
+      - ../../eval/data:/app/eval/data
+    command: ["python", "eval/scripts/ci_check.py", "--report_dir", "eval/data/reports"]

@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api.v1 import auth, knowledge, chat, model, train
+from app.api.v1 import auth, knowledge, chat, model, train, stream
 from app.core.database import create_tables
 
 
@@ -24,6 +24,7 @@ app.include_router(knowledge.router, prefix="/api/v1/knowledge", tags=["knowledg
 app.include_router(chat.router, prefix="/api/v1/chat", tags=["chat"])
 app.include_router(model.router, prefix="/api/v1/model", tags=["model"])
 app.include_router(train.router, prefix="/api/v1/train", tags=["train"])
+app.include_router(stream.router, prefix="/api/v1/model", tags=["stream"])
 
 
 @app.on_event("startup")

@@ -10,6 +10,7 @@ from app.services.rag.embedder import get_embedder
 from app.services.rag.vector_store import ChromaVectorStore
 from app.services.rag.retriever import HybridRetriever
 from app.services.model.mock_inference import get_inference_service
+from app.services.model.fact_checker import FactChecker
 from app.core.config import settings
 
 
@@ -80,12 +81,19 @@ class ChatService:
             history=history,
         )
 
+        fact_checker = FactChecker()
+        fact_result = fact_checker.check(
+            generated=result["text"],
+            contexts=context_texts,
+        )
+
         assistant_msg = ChatMessage(
             id=str(uuid.uuid4()),
             session_id=session_id,
             role="assistant",
             content=result["text"],
             sources=json.dumps(sources, ensure_ascii=False),
+            hallucination_detected=fact_result.hallucination_detected,
         )
         self.db.add(assistant_msg)
         await self.db.commit()

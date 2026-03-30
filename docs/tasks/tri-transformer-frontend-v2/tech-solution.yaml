@@ -1,0 +1,275 @@
+meta:
+  title: "Tri-Transformer 前端 v2 - WebRTC 全双工交互 + 训练配置平台化"
+  task_id: tri-transformer-frontend-v2
+  platform: web
+  created_at: "2026-03-27"
+  requirement_version: "2"
+  requirement_confidence: "medium-high"
+  base_task: tri-transformer-frontend
+
+scope:
+  in_scope:
+    - "WebRTC 信令状态机（Zustand webrtcStore）"
+    - "ChatPage 模态切换 Tab（文本/语音/视频）"
+    - "WebRTC 推流组件（getUserMedia + RTCPeerConnection）"
+    - "音频波形可视化（Web Audio API AnalyserNode）"
+    - "打断按钮与风格切换滑块（data channel）"
+    - "训练配置 Store（trainingConfigStore）"
+    - "大模型插件选择组件（ModelPluginSelector）"
+    - "训练超参配置表单（TrainingConfigForm）"
+    - "MSW Mock 新增信令 + 训练配置 handlers"
+    - "新增 TypeScript 类型（WebRTC + 训练配置）"
+  out_of_scope:
+    - "后端 aiortc 信令服务器"
+    - "实际 WebRTC TURN/STUN 服务器"
+    - "训练脚本 DeepSpeed DDP"
+
+architecture:
+  webrtc_flow: |
+    Browser → getUserMedia(mic/camera)
+    → RTCPeerConnection.createOffer()
+    → POST /api/v1/webrtc/offer → SDP answer
+    → setRemoteDescription(answer)
+    → onicecandidate → POST /api/v1/webrtc/candidate
+    ← media stream track (ontrack)
+    → 打断: POST /api/v1/webrtc/interrupt
+
+  webrtc_state_machine:
+    states: [idle, requesting_media, connecting, connected, disconnected, error]
+    transitions:
+      - from: idle
+        to: requesting_media
+        trigger: startCall()
+      - from: requesting_media
+        to: connecting
+        trigger: getUserMedia 成功
+      - from: connecting
+        to: connected
+        trigger: ontrack 事件
+      - from: connected
+        to: disconnected
+        trigger: endCall() / oniceconnectionstatechange=disconnected
+      - from: "*"
+        to: error
+        trigger: 任意异常
+
+  training_config_flow: |
+    用户选择 i_model_id / o_model_id
+    → 配置超参 (lr, batch_size, max_steps, phase)
+    → POST /api/v1/training/start → { jobId }
+    → 每 5s 轮询 GET /api/v1/training/progress
+    → 更新 loss/lr 曲线
+
+file_changes:
+  # ─── 类型扩展 ───────────────────────────────────────
+  - path: frontend/src/types/webrtc.ts
+    operation: add
+    description: "WebRTC 相关 TypeScript 类型定义"
+
+  - path: frontend/src/types/trainingConfig.ts
+    operation: add
+    description: "训练配置相关类型（TrainingConfig, TrainingJob, TrainingProgress）"
+
+  # ─── API 客户端 ──────────────────────────────────────
+  - path: frontend/src/api/webrtc.ts
+    operation: add
+    description: "WebRTC 信令 API（sendOffer, sendCandidate, sendInterrupt）"
+
+  - path: frontend/src/api/trainingConfig.ts
+    operation: add
+    description: "训练配置 API（startTraining, getProgress, getAvailableModels）"
+
+  # ─── MSW Handlers ────────────────────────────────────
+  - path: frontend/src/mocks/handlers/webrtc.ts
+    operation: add
+    description: "WebRTC 信令 Mock（POST /webrtc/offer, /candidate, /interrupt）"
+
+  - path: frontend/src/mocks/handlers/trainingConfig.ts
+    operation: add
+    description: "训练配置 Mock（POST /training/start, GET /training/progress, GET /models/available）"
+
+  - path: frontend/src/mocks/server.ts
+    operation: modify
+    description: "注册新增的 webrtcHandlers 和 trainingConfigHandlers"
+
+  # ─── Zustand Stores ──────────────────────────────────
+  - path: frontend/src/store/webrtcStore.ts
+    operation: add
+    description: "WebRTC 状态机（RTCPeerConnection 生命周期管理）"
+
+  - path: frontend/src/store/trainingConfigStore.ts
+    operation: add
+    description: "训练配置状态（config / job / progress / polling）"
+
+  # ─── 对话组件（WebRTC 相关） ──────────────────────────
+  - path: frontend/src/components/chat/ChatModeTabs.tsx
+    operation: add
+    description: "对话模态切换 Tab（text / audio / video）"
+
+  - path: frontend/src/components/chat/WebRTCControls.tsx
+    operation: add
+    description: "WebRTC 控制面板（开始/结束/打断按钮 + 风格滑块）"
+
+  - path: frontend/src/components/chat/AudioVisualizer.tsx
+    operation: add
+    description: "音频波形可视化（Canvas + AnalyserNode）"
+
+  - path: frontend/src/pages/ChatPage.tsx
+    operation: modify
+    description: "集成 ChatModeTabs，语音/视频模式渲染 WebRTCControls + AudioVisualizer"
+
+  # ─── 训练配置组件 ─────────────────────────────────────
+  - path: frontend/src/components/training/ModelPluginSelector.tsx
+    operation: add
+    description: "I/O 端底座模型选择（Select + 自定义 Model ID 输入）"
+
+  - path: frontend/src/components/training/TrainingConfigForm.tsx
+    operation: add
+    description: "训练超参配置表单（lr / batch_size / max_steps / phase）"
+
+  - path: frontend/src/pages/TrainingPage.tsx
+    operation: modify
+    description: "集成 ModelPluginSelector + TrainingConfigForm，展示训练进度"
+
+  # ─── 测试文件 ─────────────────────────────────────────
+  - path: frontend/src/store/__tests__/webrtcStore.test.ts
+    operation: add
+    description: "webrtcStore 单元测试（状态机流转、API 调用 Mock）"
+
+  - path: frontend/src/store/__tests__/trainingConfigStore.test.ts
+    operation: add
+    description: "trainingConfigStore 单元测试（startTraining、fetchProgress、轮询）"
+
+  - path: frontend/src/api/__tests__/webrtc.test.ts
+    operation: add
+    description: "WebRTC API 单元测试（信令请求格式验证）"
+
+  - path: frontend/src/components/chat/__tests__/WebRTCControls.test.tsx
+    operation: add
+    description: "WebRTCControls 组件测试（按钮状态、事件回调）"
+
+  - path: frontend/src/components/chat/__tests__/AudioVisualizer.test.tsx
+    operation: add
+    description: "AudioVisualizer 组件测试（Canvas 渲染、AudioContext Mock）"
+
+  - path: frontend/src/components/chat/__tests__/ChatModeTabs.test.tsx
+    operation: add
+    description: "ChatModeTabs 组件测试（Tab 切换、模态渲染）"
+
+  - path: frontend/src/components/training/__tests__/ModelPluginSelector.test.tsx
+    operation: add
+    description: "ModelPluginSelector 组件测试（选项渲染、自定义输入）"
+
+  - path: frontend/src/components/training/__tests__/TrainingConfigForm.test.tsx
+    operation: add
+    description: "TrainingConfigForm 组件测试（表单验证、提交回调）"
+
+api_changes:
+  new_endpoints:
+    - method: POST
+      path: /api/v1/webrtc/offer
+      request: "{ sdp: string, type: 'offer' }"
+      response: "{ sdp: string, type: 'answer' }"
+    - method: POST
+      path: /api/v1/webrtc/candidate
+      request: "{ candidate: RTCIceCandidateInit }"
+      response: "{ ok: true }"
+    - method: POST
+      path: /api/v1/webrtc/interrupt
+      request: "{}"
+      response: "{ ok: true }"
+    - method: POST
+      path: /api/v1/training/start
+      request: "{ i_model_id: string, o_model_id: string, learning_rate: number, batch_size: number, max_steps: number, phase: 0|1|2 }"
+      response: "{ jobId: string }"
+    - method: GET
+      path: /api/v1/training/progress
+      response: "{ jobId: string, phase: number, step: number, maxSteps: number, loss: number, lr: number, status: 'running'|'completed'|'failed' }"
+    - method: GET
+      path: /api/v1/models/available
+      response: "{ models: Array<{ id: string, name: string, type: 'input'|'output' }> }"
+
+testing_strategy:
+  webrtc_mock: |
+    vi.stubGlobal('RTCPeerConnection', vi.fn().mockImplementation(() => ({
+      createOffer: vi.fn().mockResolvedValue({ type: 'offer', sdp: 'mock_sdp' }),
+      setLocalDescription: vi.fn().mockResolvedValue(undefined),
+      setRemoteDescription: vi.fn().mockResolvedValue(undefined),
+      addIceCandidate: vi.fn().mockResolvedValue(undefined),
+      close: vi.fn(),
+      onicecandidate: null,
+      ontrack: null,
+    })))
+  audio_context_mock: |
+    vi.stubGlobal('AudioContext', vi.fn().mockImplementation(() => ({
+      createAnalyser: vi.fn().mockReturnValue({ connect: vi.fn(), disconnect: vi.fn(), fftSize: 2048, getByteTimeDomainData: vi.fn() }),
+      createMediaStreamSource: vi.fn().mockReturnValue({ connect: vi.fn() }),
+      close: vi.fn(),
+    })))
+  media_devices_mock: |
+    Object.defineProperty(navigator, 'mediaDevices', {
+      writable: true,
+      value: {
+        getUserMedia: vi.fn().mockResolvedValue({ getTracks: () => [] })
+      }
+    })
+
+reusable_assets:
+  - feature: "训练配置轮询"
+    existing_asset: "useMetricsStore.fetchStatus"
+    file_path: "frontend/src/store/metricsStore.ts"
+    reuse_method: "组合（参考 setInterval 模式）"
+    forbidden_direct_calls:
+      - none
+  - feature: "MSW handler 注册"
+    existing_asset: "server.ts setupServer pattern"
+    file_path: "frontend/src/mocks/server.ts"
+    reuse_method: "扩展（新增 handlers 注册）"
+    forbidden_direct_calls:
+      - none
+
+risks:
+  - id: RISK-V2-001
+    description: "WebRTC jsdom 不完整，测试需完善 Mock"
+    severity: P1
+    mitigation: "vi.stubGlobal 模拟 RTCPeerConnection + navigator.mediaDevices"
+  - id: RISK-V2-002
+    description: "AudioContext jsdom 不支持"
+    severity: P1
+    mitigation: "vi.stubGlobal 模拟 AudioContext"
+  - id: RISK-V2-003
+    description: "ChatPage 修改可能破坏现有 v1 测试"
+    severity: P2
+    mitigation: "仅在现有 JSX 外层包 Tab，不修改现有子组件逻辑"
+
+validation:
+  acceptance:
+    - id: AC-V2-001
+      test: "vitest run src/store/__tests__/webrtcStore.test.ts"
+      description: "WebRTC 状态机流转正确"
+    - id: AC-V2-002
+      test: "vitest run src/components/chat/__tests__/AudioVisualizer.test.tsx"
+      description: "音频波形组件 Canvas Mock 渲染"
+    - id: AC-V2-003
+      test: "vitest run src/store/__tests__/trainingConfigStore.test.ts"
+      description: "训练配置 Store 功能"
+    - id: AC-V2-004
+      test: "vitest run src/components/training/__tests__/ModelPluginSelector.test.tsx"
+      description: "模型插件选择组件"
+    - id: AC-V2-005
+      test: "vitest run src/components/training/__tests__/TrainingConfigForm.test.tsx"
+      description: "训练配置表单验证与提交"
+    - id: AC-V2-006
+      test: "vitest run src/components/chat/__tests__/ChatModeTabs.test.tsx"
+      description: "ChatPage 模态切换"
+    - id: AC-V2-007
+      test: "vitest run src/components/chat/__tests__/WebRTCControls.test.tsx"
+      description: "WebRTC 控制面板按钮"
+    - id: AC-V2-008
+      test: "cd frontend && npx vitest run"
+      description: "全量测试无回归（含 v1 54个用例）"
+
+commands:
+  test: "cd frontend && npx vitest run"
+  typecheck: "cd frontend && npx tsc --noEmit"
+  lint_incremental: "cd frontend && git diff --name-only HEAD | grep -E '\\.(ts|tsx)$' | xargs npx eslint --max-warnings 0"

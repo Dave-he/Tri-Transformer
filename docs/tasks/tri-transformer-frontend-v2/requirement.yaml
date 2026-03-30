@@ -1,0 +1,140 @@
+task_id: tri-transformer-frontend-v2
+version: "2"
+created_at: "2026-03-27"
+base_version: tri-transformer-frontend
+
+business_goal:
+  summary: "在现有 v1 前端基础上，新增全双工 WebRTC 实时音视频交互、训练配置平台化界面、大模型插件选择界面"
+  target_users:
+    - "AI 架构师与算法工程师"
+    - "企业知识管理员"
+  problem_to_solve: "v1 仅支持文本对话与文档管理，sub_prd 04 要求实现 WebRTC 全双工音视频交互与训练流水线配置前端"
+  success_metrics:
+    - "用户可通过 WebRTC 麦克风/摄像头进行实时音视频对话（<300ms 延迟感知）"
+    - "用户可通过 UI 配置左/右端大模型插件（输入 HuggingFace Model ID）"
+    - "用户可从前端触发 LoRA 微调训练并实时查看进度"
+    - "WebRTC 通道联通，浏览器麦克风说话后几百毫秒内收到音频回包"
+
+scope:
+  in_scope:
+    - "WebRTC 全双工音视频交互组件（麦克风/摄像头推流、打断按钮、风格切换滑块）"
+    - "WebRTC 信令客户端 (SDP offer/answer, ICE candidate 交换)"
+    - "音频波形可视化（Web Audio API AnalyserNode）"
+    - "大模型插件配置界面（I-Transformer 与 O-Transformer 底座模型下拉选择/输入）"
+    - "训练启动与超参配置表单（learning rate、batch size、训练阶段选择）"
+    - "训练进度实时展示（W&B / TensorBoard metrics 轮询）"
+    - "对话页增加模态切换（文本/语音/视频 tab）"
+    - "ChatPage 集成 WebRTC 通道管理"
+  out_of_scope:
+    - "后端 WebRTC 信令服务器实现（aiortc）"
+    - "训练脚本实现（DeepSpeed DDP）"
+    - "模型推理引擎"
+    - "移动端适配"
+
+platform: web
+tech_stack:
+  frontend: "React 18 + Ant Design 5.x（现有）"
+  webrtc: "WebRTC API（浏览器原生）+ simple-peer（简化封装）"
+  audio_viz: "Web Audio API（AnalyserNode + Canvas）"
+  state_management: "Zustand（现有）"
+  bundler: "Vite（现有）"
+  language: "TypeScript（现有）"
+  testing: "Vitest + React Testing Library（现有）"
+
+key_interactions:
+  - path: "用户进入对话页 → 点击「语音模式」→ 授权麦克风 → 开始实时语音对话 → 点击打断"
+    entry: "ChatPage 模态切换 Tab"
+    states:
+      - "未授权（请求权限）"
+      - "连接中（WebRTC handshake）"
+      - "通话中（双向流）"
+      - "打断（用户打断，停止输出）"
+      - "错误（ICE 失败）"
+  - path: "用户进入训练配置页 → 选择左/右端底座模型 → 配置超参 → 点击「启动训练」→ 查看实时进度"
+    entry: "TrainingPage 配置表单"
+    states:
+      - "配置中"
+      - "训练中（实时轮询 metrics）"
+      - "完成"
+      - "失败"
+
+acceptance_criteria:
+  - id: AC-V2-001
+    description: "WebRTC 组件可获取麦克风权限并建立 RTCPeerConnection"
+    testable: true
+  - id: AC-V2-002
+    description: "音频波形可视化组件在有音频流时正确渲染 Canvas 动画"
+    testable: true
+  - id: AC-V2-003
+    description: "训练配置表单验证通过后可触发 POST /training/start API"
+    testable: true
+  - id: AC-V2-004
+    description: "大模型插件选择组件正确提交 i_model_id 和 o_model_id 参数"
+    testable: true
+  - id: AC-V2-005
+    description: "WebRTC Store 的 connection 状态正确流转（idle→connecting→connected→disconnected）"
+    testable: true
+  - id: AC-V2-006
+    description: "打断按钮触发时发送 interrupt 信号并更新 UI 状态"
+    testable: true
+  - id: AC-V2-007
+    description: "训练 Store 的 startTraining / fetchProgress actions 正确更新状态"
+    testable: true
+  - id: AC-V2-008
+    description: "对话页的模态切换 Tab 可在文本/语音/视频间切换"
+    testable: true
+
+data_and_interfaces:
+  status: "新增 API endpoints"
+  assumed_api_base: "http://localhost:8000/api/v1"
+  new_api_modules:
+    - module: "webrtc"
+      endpoints:
+        - "POST /webrtc/offer"
+        - "POST /webrtc/answer"
+        - "POST /webrtc/candidate"
+        - "POST /webrtc/interrupt"
+    - module: "training_v2"
+      endpoints:
+        - "POST /training/start"
+        - "GET /training/progress"
+        - "GET /models/available"
+    - module: "config"
+      endpoints:
+        - "POST /config/model-plugins"
+        - "GET /config/model-plugins"
+
+risks:
+  - id: RISK-V2-001
+    description: "WebRTC API 在测试环境（jsdom）不完整，需完善 Mock"
+    severity: P1
+    mitigation: "使用 vitest mock RTCPeerConnection，测试信令逻辑而非底层 WebRTC"
+  - id: RISK-V2-002
+    description: "Web Audio API 在 jsdom 中不支持，需 Mock"
+    severity: P1
+    mitigation: "Mock AudioContext 和 AnalyserNode，测试数据流和状态，不测 Canvas 像素"
+  - id: RISK-V2-003
+    description: "simple-peer 库需新增到依赖"
+    severity: P2
+    mitigation: "评估是否用原生 WebRTC API 代替，避免引入额外依赖"
+
+gate:
+  verdict: "PASS_WITH_RISK"
+  mode: "standard"
+  p0_missing: []
+  p1_missing:
+    - "后端信令服务器尚未实现"
+    - "WebRTC 实际设备测试依赖后端"
+  open_questions:
+    - "是否引入 simple-peer 或使用原生 WebRTC API？"
+    - "音视频模式是否复用现有 ChatPage 还是独立新页面？"
+  resolved_questions:
+    - "复用 ChatPage，通过 Tab 切换模态（减少路由改动）"
+    - "优先使用原生 WebRTC API，避免新依赖"
+  ambiguity_score:
+    business_goal_clarity: 88
+    interaction_completeness: 82
+    ac_testability: 85
+    data_contract_certainty: 60
+    overall: 79
+    confidence_level: "medium-high"

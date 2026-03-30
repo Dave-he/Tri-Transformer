@@ -22,6 +22,7 @@ class MessageResponse(BaseModel):
     role: str
     content: str
     sources: list[dict]
+    hallucination_detected: bool = False
     created_at: datetime
 
 

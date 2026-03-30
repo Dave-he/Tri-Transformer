@@ -60,6 +60,7 @@ async def send_message(
         role=msg.role,
         content=msg.content,
         sources=sources,
+        hallucination_detected=msg.hallucination_detected,
         created_at=msg.created_at,
     )
 

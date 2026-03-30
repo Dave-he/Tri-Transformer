@@ -29,6 +29,8 @@
 | Stage 7.5 | 埋点生成 | ⏭️ SKIP | 非埋点需求 |
 | Stage 7.6 | 文件变更审查 | ✅ PASS | 全新模块，所有变更均在 eval/ 内 |
 | Stage 8 | 验收自动化 | ⏭️ SKIP | 未配置 enabled=true，跳过 |
+| P1-1 | Docker 容器化部署 | ✅ PASS | eval/docker/Dockerfile + eval/docker/docker-compose.yml |
+| P1-2 | GitHub Actions CI | ✅ PASS | .github/workflows/eval-ci.yml |
 
 ---
 

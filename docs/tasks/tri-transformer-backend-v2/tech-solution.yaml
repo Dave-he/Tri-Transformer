@@ -1,0 +1,139 @@
+meta:
+  task_id: tri-transformer-backend-v2
+  title: "Tri-Transformer 后端增量开发 v2"
+  platform: backend
+  language: python
+  framework: fastapi
+  created_at: "2026-03-27"
+  requirement_version: "2.0.0"
+  scope: backend_only
+  predecessor_task: tri-transformer-backend
+  baseline_tests: 80
+
+tech_stack:
+  language: python
+  python_version: "3.10+"
+  framework: fastapi
+  pluggable_llm: transformers>=4.40 + peft>=0.10
+  tokenizer_audio: mock_snac_adapter
+  tokenizer_vision: mock_vq_adapter
+  websocket: fastapi_native_websocket
+  fact_checking: cosine_similarity_mock
+  testing: pytest_asyncio
+
+file_changes:
+  # FR-101: 双端大模型插拔
+  - path: backend/app/model/lora_adapter.py
+    action: add
+    description: "LoraAdapter: 为 nn.Linear 注入低秩旁路（A∈R^{r×k}, B∈R^{d×r}），freeze_base 时底座 requires_grad=False"
+
+  - path: backend/app/model/pluggable_llm.py
+    action: add
+    description: "HFModelLoader: 从 HF Hub/本地加载 transformers 模型权重层; PluggableLLMAdapter: 映射外部模型权重到 I/O 分支特定层"
+
+  # FR-102: 多模态 Tokenizer
+  - path: backend/app/model/tokenizer/__init__.py
+    action: add
+    description: "tokenizer 包初始化，导出 UnifiedTokenizer"
+
+  - path: backend/app/model/tokenizer/text_tokenizer.py
+    action: add
+    description: "TextTokenizer: 封装 HF tokenizer，fallback char-level mock，输出 input_ids list"
+
+  - path: backend/app/model/tokenizer/audio_tokenizer.py
+    action: add
+    description: "AudioTokenizer: Mock 实现，将 float 音频帧数组→离散 Token IDs，范围 [130000, 134000]"
+
+  - path: backend/app/model/tokenizer/vision_tokenizer.py
+    action: add
+    description: "VisionTokenizer: Mock 实现，将 PIL Image 或 bytes→视觉 Token IDs，范围 [135000, 145000]"
+
+  - path: backend/app/model/tokenizer/unified_tokenizer.py
+    action: add
+    description: "UnifiedTokenizer: 注册特殊 Token(<|audio_start|>/<|vision_start|>/<|interrupt|>)，encode_mixed() 合并多模态输入为单一 input_ids"
+
+  # FR-103: 流式推理 WebSocket 端点
+  - path: backend/app/services/model/stream_engine.py
+    action: add
+    description: "StreamingEngine: 维护生成状态，驱动 Mock 逐 Token 输出，支持 interrupt_event 立即中止"
+
+  - path: backend/app/api/v1/stream.py
+    action: add
+    description: "WebSocket 路由 /api/v1/model/stream: 接收 token/interrupt/close 消息，JWT 鉴权通过 query param ?token=<jwt>"
+
+  - path: backend/app/main.py
+    action: modify
+    description: "注册 stream router 到 FastAPI app"
+
+  # FR-104: 幻觉阻断服务
+  - path: backend/app/services/model/fact_checker.py
+    action: add
+    description: "FactChecker: check(generated, contexts) 返回 FactCheckResult(score, hallucination_detected)，Mock 使用随机嵌入余弦相似度"
+
+  - path: backend/app/schemas/chat.py
+    action: modify
+    description: "MessageResponse 新增 hallucination_detected: bool = False 字段"
+
+  - path: backend/app/services/chat/chat_service.py
+    action: modify
+    description: "send_message() 调用 FactChecker，将 hallucination_detected 写入 ChatMessage，响应中包含该字段"
+
+  - path: backend/app/models/chat_session.py
+    action: modify
+    description: "ChatMessage ORM 新增 hallucination_detected: bool 列（default=False）"
+
+  # 测试文件
+  - path: backend/tests/test_pluggable_llm.py
+    action: add
+    description: "单元测试：HFModelLoader Mock 加载/PluggableLLMAdapter 前向传播/LoraAdapter 梯度隔离/LoRA 参数量验证"
+
+  - path: backend/tests/test_tokenizer.py
+    action: add
+    description: "单元测试：TextTokenizer/AudioTokenizer/VisionTokenizer/UnifiedTokenizer 编码不越界/模态区间互不重叠/特殊Token ID可查"
+
+  - path: backend/tests/test_stream.py
+    action: add
+    description: "WebSocket 集成测试：连接建立/text消息流式响应/interrupt消息中止/连接关闭生命周期"
+
+  - path: backend/tests/test_fact_checker.py
+    action: add
+    description: "单元测试：相同文本高分/不同文本低分/阈值判断/对话API响应包含hallucination_detected字段"
+
+validation:
+  acceptance:
+    - "LoraAdapter 注入后 forward pass 不报错，底座 requires_grad=False"
+    - "LoRA 可训练参数量 < 底座参数量 × 5%"
+    - "UnifiedTokenizer.encode_mixed() 音频 Token ∈[130000,134000]，视觉 Token ∈[135000,145000]"
+    - "各模态 Token ID 区间互不重叠"
+    - "WebSocket /api/v1/model/stream 建立连接并返回逐 Token 流"
+    - "WebSocket 收到 interrupt 消息后立即停止生成"
+    - "FactChecker.check() 返回 FactCheckResult(score, hallucination_detected)"
+    - "POST /chat/sessions/{id}/messages 响应包含 hallucination_detected 字段"
+    - "pytest tests/ 全部通过（包含已有 80 个 + 新增 >= 20 个），覆盖率 >= 80%"
+
+  test_command: "cd backend && pytest tests/ -v --cov=app --cov-report=term-missing"
+
+risks:
+  - level: MEDIUM
+    description: "peft 库未在 requirements.txt 中，需新增依赖"
+    mitigation: "新增 peft>=0.10 到 requirements.txt，单元测试使用 d_model=64 小型模型"
+
+  - level: MEDIUM
+    description: "WebSocket 测试需要特殊 Starlette TestClient"
+    mitigation: "使用 TestClient.websocket_connect() context manager，不依赖真实服务器"
+
+  - level: LOW
+    description: "ChatMessage ORM 新增列需要数据库 migration"
+    mitigation: "测试环境使用 SQLite in-memory（create_all 每次重建），生产需 alembic migration"
+
+  - level: LOW
+    description: "修改 chat_service.py 和 schemas/chat.py 可能影响已有 chat 测试"
+    mitigation: "hallucination_detected 字段有默认值 False，向后兼容，已有测试不需修改"
+
+implementation_notes:
+  - "LoRA 实现：W' = W + BA，A 初始化正态分布，B 初始化零（保证初始等价原始权重）"
+  - "WebSocket JWT 鉴权：从 query param token= 读取，复用 security.verify_token()"
+  - "StreamingEngine.generate() 为异步生成器 (async generator)，逐 Token yield"
+  - "FactChecker Mock：embedding = normalize(random_vector)，相同文本复用缓存确保 score ≈ 1.0"
+  - "UnifiedTokenizer 特殊 Token 偏移：audio_offset=130000, vision_offset=135000"
+  - "ChatMessage 新增 hallucination_detected 列需在 conftest.py create_all 后自动包含（SQLite in-memory）"

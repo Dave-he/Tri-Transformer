@@ -4,12 +4,16 @@ import { authHandlers } from '../handlers/auth';
 import { conversationHandlers } from '../handlers/conversations';
 import { documentHandlers } from '../handlers/documents';
 import { trainingHandlers } from '../handlers/training';
+import { webrtcHandlers } from '../handlers/webrtc';
+import { trainingConfigHandlers } from '../handlers/trainingConfig';
 
 const server = setupServer(
   ...authHandlers,
   ...conversationHandlers,
   ...documentHandlers,
-  ...trainingHandlers
+  ...trainingHandlers,
+  ...webrtcHandlers,
+  ...trainingConfigHandlers
 );
 
 beforeAll(() => server.listen({ onUnhandledRequest: 'error' }));
@@ -92,5 +96,62 @@ describe('Training handlers', () => {
     expect(data.current).toHaveProperty('retrievalAccuracy');
     expect(data.current).toHaveProperty('bleuScore');
     expect(data.current).toHaveProperty('hallucinationRate');
+  });
+});
+
+describe('WebRTC handlers', () => {
+  it('POST /api/v1/webrtc/offer returns SDP answer', async () => {
+    const res = await fetch('http://localhost:8000/api/v1/webrtc/offer', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer test-token' },
+      body: JSON.stringify({ sdp: 'offer_sdp', type: 'offer' }),
+    });
+    expect(res.ok).toBe(true);
+    const data = await res.json();
+    expect(data).toHaveProperty('sdp');
+    expect(data.type).toBe('answer');
+  });
+
+  it('POST /api/v1/webrtc/interrupt returns ok', async () => {
+    const res = await fetch('http://localhost:8000/api/v1/webrtc/interrupt', {
+      method: 'POST',
+      headers: { Authorization: 'Bearer test-token' },
+    });
+    expect(res.ok).toBe(true);
+    const data = await res.json();
+    expect(data.ok).toBe(true);
+  });
+});
+
+describe('TrainingConfig handlers', () => {
+  it('POST /api/v1/training/start returns jobId', async () => {
+    const res = await fetch('http://localhost:8000/api/v1/training/start', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer test-token' },
+      body: JSON.stringify({ i_model_id: 'qwen2', o_model_id: 'llama3', learning_rate: 1e-4, batch_size: 8, max_steps: 100, phase: 0 }),
+    });
+    expect(res.ok).toBe(true);
+    const data = await res.json();
+    expect(data).toHaveProperty('jobId');
+  });
+
+  it('GET /api/v1/training/progress returns progress object', async () => {
+    const res = await fetch('http://localhost:8000/api/v1/training/progress', {
+      headers: { Authorization: 'Bearer test-token' },
+    });
+    expect(res.ok).toBe(true);
+    const data = await res.json();
+    expect(data).toHaveProperty('step');
+    expect(data).toHaveProperty('maxSteps');
+    expect(data).toHaveProperty('status');
+  });
+
+  it('GET /api/v1/models/available returns models array', async () => {
+    const res = await fetch('http://localhost:8000/api/v1/models/available', {
+      headers: { Authorization: 'Bearer test-token' },
+    });
+    expect(res.ok).toBe(true);
+    const data = await res.json();
+    expect(Array.isArray(data.models)).toBe(true);
   });
 });
