@@ -1,0 +1,48 @@
+project_conventions:
+  generated_at: "2026-03-30"
+  language: fullstack (TypeScript + Python)
+
+  frontend:
+    framework: react
+    test_framework: vitest
+    lint: eslint
+    formatter: prettier (implicit via vite)
+    component_style: functional + hooks
+    naming:
+      components: PascalCase
+      hooks: camelCase (use* prefix)
+      stores: camelCase (*Store suffix)
+      files: PascalCase for components, camelCase for utils
+    directories:
+      components: frontend/src/components/
+      pages: frontend/src/pages/
+      hooks: frontend/src/hooks/
+      store: frontend/src/store/
+      api: frontend/src/api/
+      types: frontend/src/types/
+      utils: frontend/src/utils/
+      mocks: frontend/src/mocks/
+    test_pattern: "**/__tests__/*.test.tsx"
+
+  backend:
+    framework: fastapi
+    test_framework: pytest
+    formatter: black
+    linter: flake8
+    line_length: 100
+    naming:
+      classes: PascalCase
+      functions: snake_case
+      files: snake_case
+    directories:
+      api: backend/app/api/v1/
+      services: backend/app/services/
+      models: backend/app/models/
+      schemas: backend/app/schemas/
+      core: backend/app/core/
+      tests: backend/tests/
+    test_pattern: "tests/test_*.py"
+
+  git:
+    commit_format: "type: description"
+    types: [feat, fix, refactor, test, docs, chore]

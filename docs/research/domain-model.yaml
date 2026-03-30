@@ -1,0 +1,45 @@
+domain_model:
+  generated_at: "2026-03-30"
+  entities:
+    - name: User
+      source: backend/app/models/user.py
+      fields:
+        - id: int (PK)
+        - username: str (unique, indexed)
+        - email: str (unique, indexed)
+        - hashed_password: str
+        - kb_id: str (auto-generated)
+        - created_at: datetime
+
+    - name: Document
+      source: backend/app/models/document.py
+      description: 知识库文档（RAG 索引基础）
+
+    - name: ChatSession
+      source: backend/app/models/chat_session.py
+      description: 对话会话记录
+
+    - name: TrainJob
+      source: backend/app/models/train_job.py
+      description: 模型训练任务
+
+  pydantic_schemas:
+    - name: auth
+      source: backend/app/schemas/auth.py
+      schemas: [RegisterRequest, LoginRequest, TokenResponse]
+    - name: chat
+      source: backend/app/schemas/chat.py
+      schemas: [ChatRequest, ChatResponse, MessageItem]
+    - name: knowledge
+      source: backend/app/schemas/knowledge.py
+      schemas: [DocumentCreate, DocumentResponse]
+    - name: model
+      source: backend/app/schemas/model.py
+      schemas: [ModelInfo, InferenceRequest, InferenceResponse]
+    - name: train
+      source: backend/app/schemas/train.py
+      schemas: [TrainJobCreate, TrainJobStatus]
+
+  frontend_types:
+    source: frontend/src/types/
+    description: TypeScript 类型定义目录

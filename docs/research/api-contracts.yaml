@@ -1,0 +1,69 @@
+api_contracts:
+  generated_at: "2026-03-30"
+  base_url: http://localhost:8000
+  auth_type: JWT Bearer
+
+  endpoints:
+    - method: POST
+      path: /api/v1/auth/register
+      request: RegisterRequest
+      response: TokenResponse
+      auth: false
+
+    - method: POST
+      path: /api/v1/auth/login
+      request: LoginRequest
+      response: TokenResponse
+      auth: false
+
+    - method: POST
+      path: /api/v1/chat
+      request: ChatRequest
+      response: ChatResponse
+      auth: true
+      notes: RAG 对话，支持知识库检索
+
+    - method: GET
+      path: /api/v1/knowledge
+      response: List[DocumentResponse]
+      auth: true
+
+    - method: POST
+      path: /api/v1/knowledge
+      request: multipart/form-data (file)
+      response: DocumentResponse
+      auth: true
+
+    - method: DELETE
+      path: /api/v1/knowledge/{doc_id}
+      auth: true
+
+    - method: GET
+      path: /api/v1/model
+      response: ModelInfo
+      auth: true
+
+    - method: POST
+      path: /api/v1/train
+      request: TrainJobCreate
+      response: TrainJobStatus
+      auth: true
+
+    - method: GET
+      path: /api/v1/train/{job_id}
+      response: TrainJobStatus
+      auth: true
+
+    - method: GET/WS
+      path: /api/v1/model/stream
+      notes: 流式推理输出（SSE 或 WebSocket）
+      auth: true
+
+    - method: GET
+      path: /health
+      auth: false
+      response: '{"status": "ok"}'
+
+  frontend_api_clients:
+    - file: frontend/src/api/client.ts
+      notes: Axios 基础客户端，统一注入 Authorization header

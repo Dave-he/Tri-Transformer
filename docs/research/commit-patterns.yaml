@@ -1,0 +1,23 @@
+commit_patterns:
+  generated_at: "2026-03-30"
+  lookback_days: 90
+  total_commits: 4
+
+  hotspot_files:
+    - path: backend/app/
+      change_count: 2
+      risk: medium
+    - path: frontend/
+      change_count: 2
+      risk: medium
+
+  commit_convention:
+    format: "type: description"
+    types_used: [feat, chore]
+    compliance_rate: 100%
+
+  feature_evolution:
+    - "feat: initial commit — backend API + PyTorch model skeleton"
+    - "chore: update gitignore, add eval/data placeholder, refresh PRD"
+    - "feat: 更新 Tri-Transformer 文档及技术细节"
+    - "feat: 添加幻觉检测与实时通信功能"

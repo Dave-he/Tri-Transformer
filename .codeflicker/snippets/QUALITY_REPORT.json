@@ -1,0 +1,55 @@
+{
+  "totalSnippets": 22,
+  "byCategory": {
+    "components": 15,
+    "stores": 2,
+    "views": 2,
+    "utils": 1,
+    "other": 1,
+    "hooks": 1
+  },
+  "totalByCategory": {
+    "components": 0,
+    "stores": 0,
+    "views": 0,
+    "utils": 0,
+    "other": 0,
+    "hooks": 0
+  },
+  "byExtension": {
+    ".tsx": 15,
+    ".ts": 7
+  },
+  "byFramework": {
+    "react": 22
+  },
+  "byPackage": [],
+  "warnings": [],
+  "savedOriginalPaths": [
+    "/mnt/ssd/codespace/Tri-Transformer/frontend/src/components/chat/MessageBubble.tsx",
+    "/mnt/ssd/codespace/Tri-Transformer/frontend/src/components/chat/AudioVisualizer.tsx",
+    "/mnt/ssd/codespace/Tri-Transformer/frontend/src/components/common/EmptyState.tsx",
+    "/mnt/ssd/codespace/Tri-Transformer/frontend/src/components/chat/ChatInput.tsx",
+    "/mnt/ssd/codespace/Tri-Transformer/frontend/src/components/chat/ChatModeTabs.tsx",
+    "/mnt/ssd/codespace/Tri-Transformer/frontend/src/components/chat/MessageList.tsx",
+    "/mnt/ssd/codespace/Tri-Transformer/frontend/src/components/chat/ConversationList.tsx",
+    "/mnt/ssd/codespace/Tri-Transformer/frontend/src/components/chat/WebRTCControls.tsx",
+    "/mnt/ssd/codespace/Tri-Transformer/frontend/src/components/training/TrainingConfigForm.tsx",
+    "/mnt/ssd/codespace/Tri-Transformer/frontend/src/components/chat/SourcePanel.tsx",
+    "/mnt/ssd/codespace/Tri-Transformer/frontend/src/components/common/LoadingSpinner.tsx",
+    "/mnt/ssd/codespace/Tri-Transformer/frontend/src/components/metrics/TrainingStatusCard.tsx",
+    "/mnt/ssd/codespace/Tri-Transformer/frontend/src/components/documents/UploadPanel.tsx",
+    "/mnt/ssd/codespace/Tri-Transformer/frontend/src/components/common/ErrorBoundary.tsx",
+    "/mnt/ssd/codespace/Tri-Transformer/frontend/src/components/documents/SearchTestPanel.tsx",
+    "/mnt/ssd/codespace/Tri-Transformer/frontend/src/store/webrtcStore.ts",
+    "/mnt/ssd/codespace/Tri-Transformer/frontend/src/store/conversationStore.ts",
+    "/mnt/ssd/codespace/Tri-Transformer/frontend/src/pages/ChatPage.tsx",
+    "/mnt/ssd/codespace/Tri-Transformer/frontend/src/pages/MetricsPage.tsx",
+    "/mnt/ssd/codespace/Tri-Transformer/frontend/src/utils/exportConversation.ts",
+    "/mnt/ssd/codespace/Tri-Transformer/frontend/src/api/client.ts",
+    "/mnt/ssd/codespace/Tri-Transformer/frontend/src/hooks/useConversation.ts"
+  ],
+  "existingBeforeRun": 0,
+  "savedThisRun": 22,
+  "timestamp": "2026-03-30T06:29:16.582Z"
+}

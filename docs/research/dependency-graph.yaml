@@ -1,0 +1,47 @@
+dependency_graph:
+  generated_at: "2026-03-30"
+  core_modules:
+    - name: frontend/src/api/client.ts
+      depended_by:
+        - frontend/src/api/conversations.ts
+        - frontend/src/api/documents.ts
+        - frontend/src/api/auth.ts
+        - frontend/src/api/training.ts
+        - frontend/src/api/trainingConfig.ts
+        - frontend/src/api/webrtc.ts
+      change_impact: high
+
+    - name: frontend/src/store/authStore.ts
+      depended_by:
+        - frontend/src/hooks/useAuth.ts
+        - frontend/src/pages/ChatPage.tsx
+        - frontend/src/pages/LoginPage.tsx
+      change_impact: high
+
+    - name: backend/app/core/database.py
+      depended_by:
+        - backend/app/models/user.py
+        - backend/app/models/document.py
+        - backend/app/models/chat_session.py
+        - backend/app/models/train_job.py
+      change_impact: high
+
+    - name: backend/app/model/tri_transformer.py
+      depended_by:
+        - backend/app/services/model/inference_service.py
+        - backend/app/model/trainer.py
+      change_impact: high
+
+  high_impact_files:
+    - path: frontend/src/api/client.ts
+      fan_out: 0
+      fan_in: 6
+      risk: high
+    - path: backend/app/core/database.py
+      fan_out: 0
+      fan_in: 4
+      risk: high
+    - path: backend/app/model/tri_transformer.py
+      fan_out: 3
+      fan_in: 2
+      risk: medium

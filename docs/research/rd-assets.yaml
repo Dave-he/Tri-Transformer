@@ -1,0 +1,130 @@
+project:
+  name: Tri-Transformer
+  type: fullstack
+  platform: codeflicker
+  frontend: react
+  backend: fastapi
+  generated_at: "2026-03-30"
+
+frontend:
+  framework: react
+  language: typescript
+  build_tool: vite
+  test_framework: vitest
+  ui_library: antd
+  state_management: zustand
+  http_client: axios
+  charts: recharts
+  source_root: frontend/src
+
+  components:
+    - path: frontend/src/components/chat/ChatInput.tsx
+      category: component
+    - path: frontend/src/components/chat/MessageList.tsx
+      category: component
+    - path: frontend/src/components/chat/SourcePanel.tsx
+      category: component
+    - path: frontend/src/components/chat/ChatModeTabs.tsx
+      category: component
+    - path: frontend/src/components/chat/AudioVisualizer.tsx
+      category: component
+    - path: frontend/src/components/training/TrainingConfigForm.tsx
+      category: component
+    - path: frontend/src/components/training/ModelPluginSelector.tsx
+      category: component
+    - path: frontend/src/components/documents/DocumentList.tsx
+      category: component
+    - path: frontend/src/components/documents/UploadPanel.tsx
+      category: component
+    - path: frontend/src/components/documents/SearchTestPanel.tsx
+      category: component
+    - path: frontend/src/components/metrics/MetricsChart.tsx
+      category: component
+    - path: frontend/src/components/metrics/TrainingStatusCard.tsx
+      category: component
+
+  pages:
+    - path: frontend/src/pages/ChatPage.tsx
+    - path: frontend/src/pages/TrainingPage.tsx
+    - path: frontend/src/pages/DocumentsPage.tsx
+    - path: frontend/src/pages/MetricsPage.tsx
+    - path: frontend/src/pages/LoginPage.tsx
+    - path: frontend/src/pages/RegisterPage.tsx
+
+  hooks:
+    - path: frontend/src/hooks/useConversation.ts
+    - path: frontend/src/hooks/useDocuments.ts
+    - path: frontend/src/hooks/useAuth.ts
+
+  stores:
+    - path: frontend/src/store/conversationStore.ts
+    - path: frontend/src/store/documentStore.ts
+    - path: frontend/src/store/authStore.ts
+    - path: frontend/src/store/metricsStore.ts
+    - path: frontend/src/store/trainingConfigStore.ts
+    - path: frontend/src/store/webrtcStore.ts
+
+  api:
+    - path: frontend/src/api/client.ts
+    - path: frontend/src/api/conversations.ts
+    - path: frontend/src/api/documents.ts
+    - path: frontend/src/api/auth.ts
+    - path: frontend/src/api/training.ts
+    - path: frontend/src/api/trainingConfig.ts
+    - path: frontend/src/api/webrtc.ts
+
+backend:
+  framework: fastapi
+  language: python
+  version: "3.10"
+  test_framework: pytest
+  orm: sqlalchemy
+  migrations: alembic
+  source_root: backend/app
+
+  api_routes:
+    - path: backend/app/api/v1/auth.py
+      prefix: /api/v1/auth
+    - path: backend/app/api/v1/chat.py
+      prefix: /api/v1/chat
+    - path: backend/app/api/v1/knowledge.py
+      prefix: /api/v1/knowledge
+    - path: backend/app/api/v1/model.py
+      prefix: /api/v1/model
+    - path: backend/app/api/v1/train.py
+      prefix: /api/v1/train
+    - path: backend/app/api/v1/stream.py
+      prefix: /api/v1/model/stream
+
+  models:
+    - path: backend/app/models/user.py
+      table: users
+    - path: backend/app/models/document.py
+      table: documents
+    - path: backend/app/models/chat_session.py
+      table: chat_sessions
+    - path: backend/app/models/train_job.py
+      table: train_jobs
+
+  services:
+    - path: backend/app/services/model/inference_service.py
+    - path: backend/app/services/model/fact_checker.py
+    - path: backend/app/services/model/stream_engine.py
+    - path: backend/app/services/rag/document_processor.py
+    - path: backend/app/services/rag/vector_store.py
+    - path: backend/app/services/rag/embedder.py
+    - path: backend/app/services/rag/retriever.py
+    - path: backend/app/services/rag/reranker.py
+    - path: backend/app/services/chat/chat_service.py
+    - path: backend/app/services/train/train_service.py
+
+snippets:
+  count: 22
+  dir: .codeflicker/snippets
+  categories:
+    components: 15
+    stores: 2
+    views: 2
+    utils: 1
+    hooks: 1
+    other: 1
