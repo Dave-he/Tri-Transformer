@@ -6,7 +6,7 @@ services:
       context: ./frontend
       dockerfile: Dockerfile
     ports:
-      - "3000:80"
+      - "3002:80"
     depends_on:
       - backend
     environment:
@@ -19,7 +19,7 @@ services:
       context: ./backend
       dockerfile: Dockerfile
     ports:
-      - "8000:8000"
+      - "8002:8000"
     environment:
       - VECTOR_DB_URL=http://vector_db:19530
     depends_on:
@@ -32,9 +32,10 @@ services:
       - ./backend/tritransformer.db:/app/tritransformer.db
 
   vector_db:
-    image: milvusdb/milvus:v2.4.16
+    image: milvusdb/milvus:v2.3.3
+    command: ["/bin/sh", "-c", "milvus run standalone"]
     ports:
-      - "19530:19530"
+      - "19532:19530"
     environment:
       - ETCD_USE_EMBED=true
       - COMMON_STORAGETYPE=local
