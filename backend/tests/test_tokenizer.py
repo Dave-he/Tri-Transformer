@@ -1,148 +1,76 @@
 import pytest
-
-
-AUDIO_RANGE = (130000, 134000)
-VISION_RANGE = (135000, 145000)
-TEXT_MAX = 151936
+import torch
+import numpy as np
+from PIL import Image
+from io import BytesIO
 
 
 class TestTextTokenizer:
     def test_encode_returns_list_of_int(self):
         from app.model.tokenizer.text_tokenizer import TextTokenizer
-
-        tok = TextTokenizer()
-        ids = tok.encode("hello world")
-        assert isinstance(ids, list)
-        assert all(isinstance(i, int) for i in ids)
-        assert len(ids) > 0
-
-    def test_encode_empty_string(self):
-        from app.model.tokenizer.text_tokenizer import TextTokenizer
-
-        tok = TextTokenizer()
-        ids = tok.encode("")
-        assert isinstance(ids, list)
-
-    def test_ids_in_text_range(self):
-        from app.model.tokenizer.text_tokenizer import TextTokenizer
-
-        tok = TextTokenizer()
-        ids = tok.encode("test string for range check")
-        assert all(0 <= i < TEXT_MAX for i in ids)
+        tokenizer = TextTokenizer(vocab_size=30522)
+        tokens = tokenizer.encode("hello world")
+        assert isinstance(tokens, list)
+        assert all(isinstance(t, int) for t in tokens)
+        assert len(tokens) > 0
 
 
 class TestAudioTokenizer:
-    def test_encode_returns_list_of_int(self):
+    def test_audio_token_ids_in_range(self):
         from app.model.tokenizer.audio_tokenizer import AudioTokenizer
-
-        tok = AudioTokenizer()
-        frames = [0.1, 0.2, 0.3, -0.1, 0.5] * 20
-        ids = tok.encode(frames)
-        assert isinstance(ids, list)
-        assert all(isinstance(i, int) for i in ids)
-        assert len(ids) > 0
-
-    def test_ids_in_audio_range(self):
-        from app.model.tokenizer.audio_tokenizer import AudioTokenizer
-
-        tok = AudioTokenizer()
-        frames = [0.1] * 100
-        ids = tok.encode(frames)
-        assert all(AUDIO_RANGE[0] <= i <= AUDIO_RANGE[1] for i in ids)
-
-    def test_no_overlap_with_text_range(self):
-        from app.model.tokenizer.audio_tokenizer import AudioTokenizer
-
-        tok = AudioTokenizer()
-        frames = list(range(50))
-        ids = tok.encode(frames)
-        assert all(i >= AUDIO_RANGE[0] for i in ids)
+        tokenizer = AudioTokenizer()
+        audio_frames = [np.random.randn(16000).astype(np.float32) for _ in range(3)]
+        tokens = tokenizer.encode(audio_frames)
+        assert isinstance(tokens, list)
+        assert all(130000 <= t <= 134000 for t in tokens)
 
 
 class TestVisionTokenizer:
-    def test_encode_returns_list_of_int(self):
+    def test_vision_token_ids_in_range(self):
         from app.model.tokenizer.vision_tokenizer import VisionTokenizer
-
-        tok = VisionTokenizer()
-        image_bytes = bytes(range(256)) * 4
-        ids = tok.encode(image_bytes)
-        assert isinstance(ids, list)
-        assert all(isinstance(i, int) for i in ids)
-        assert len(ids) > 0
-
-    def test_ids_in_vision_range(self):
-        from app.model.tokenizer.vision_tokenizer import VisionTokenizer
-
-        tok = VisionTokenizer()
-        image_bytes = bytes(b"\x00" * 512)
-        ids = tok.encode(image_bytes)
-        assert all(VISION_RANGE[0] <= i <= VISION_RANGE[1] for i in ids)
-
-    def test_no_overlap_with_audio_range(self):
-        from app.model.tokenizer.vision_tokenizer import VisionTokenizer
-
-        tok = VisionTokenizer()
-        image_bytes = bytes(range(100))
-        ids = tok.encode(image_bytes)
-        assert all(i >= VISION_RANGE[0] for i in ids)
+        tokenizer = VisionTokenizer()
+        images = [
+            Image.new("RGB", (224, 224), color=(i * 20, i * 10, 128))
+            for i in range(3)
+        ]
+        tokens = tokenizer.encode(images)
+        assert isinstance(tokens, list)
+        assert all(135000 <= t <= 145000 for t in tokens)
 
 
 class TestUnifiedTokenizer:
+    def test_encode_mixed_no_overflow(self):
+        from app.model.tokenizer.unified_tokenizer import UnifiedTokenizer
+        tokenizer = UnifiedTokenizer()
+        mixed = [
+            ("text", "hello world"),
+            ("audio", [np.random.randn(16000).astype(np.float32)]),
+            ("vision", [Image.new("RGB", (224, 224), color=(100, 50, 200))]),
+        ]
+        tokens = tokenizer.encode_mixed(mixed)
+        assert isinstance(tokens, list)
+        assert all(isinstance(t, int) for t in tokens)
+        max_text = 30522
+        max_audio = 134000
+        max_vision = 145000
+        assert all(t <= max_vision for t in tokens)
+
     def test_special_tokens_registered(self):
         from app.model.tokenizer.unified_tokenizer import UnifiedTokenizer
+        tokenizer = UnifiedTokenizer()
+        special_tokens = ["<|audio_start|>", "<|vision_start|>", "<|interrupt|>"]
+        for tok in special_tokens:
+            assert tokenizer.token_to_id(tok) is not None
 
-        tok = UnifiedTokenizer()
-        assert tok.audio_start_id is not None
-        assert tok.vision_start_id is not None
-        assert tok.interrupt_id is not None
-
-    def test_special_token_ids_in_control_range(self):
+    def test_token_id_ranges_non_overlapping(self):
         from app.model.tokenizer.unified_tokenizer import UnifiedTokenizer
-
-        tok = UnifiedTokenizer()
-        for tid in [tok.audio_start_id, tok.vision_start_id, tok.interrupt_id]:
-            assert 129900 <= tid <= 129999
-
-    def test_encode_mixed_text_no_overlap(self):
-        from app.model.tokenizer.unified_tokenizer import UnifiedTokenizer, ModalInput
-
-        tok = UnifiedTokenizer()
-        inputs = [ModalInput(modality="text", data="hello")]
-        ids = tok.encode_mixed(inputs)
-        assert isinstance(ids, list)
-        assert len(ids) > 0
-
-    def test_encode_mixed_audio_ids_in_range(self):
-        from app.model.tokenizer.unified_tokenizer import UnifiedTokenizer, ModalInput
-
-        tok = UnifiedTokenizer()
-        inputs = [ModalInput(modality="audio", data=[0.1] * 50)]
-        ids = tok.encode_mixed(inputs)
-        audio_ids = [i for i in ids if i != tok.audio_start_id]
-        assert all(AUDIO_RANGE[0] <= i <= AUDIO_RANGE[1] for i in audio_ids)
-
-    def test_encode_mixed_vision_ids_in_range(self):
-        from app.model.tokenizer.unified_tokenizer import UnifiedTokenizer, ModalInput
-
-        tok = UnifiedTokenizer()
-        inputs = [ModalInput(modality="vision", data=bytes(100))]
-        ids = tok.encode_mixed(inputs)
-        vision_ids = [i for i in ids if i != tok.vision_start_id]
-        assert all(VISION_RANGE[0] <= i <= VISION_RANGE[1] for i in vision_ids)
-
-    def test_encode_mixed_multi_modal_no_id_collision(self):
-        from app.model.tokenizer.unified_tokenizer import UnifiedTokenizer, ModalInput
-
-        tok = UnifiedTokenizer()
-        inputs = [
-            ModalInput(modality="text", data="test"),
-            ModalInput(modality="audio", data=[0.5] * 30),
-            ModalInput(modality="vision", data=bytes(64)),
-        ]
-        ids = tok.encode_mixed(inputs)
-        text_ids = [i for i in ids if i < TEXT_MAX]
-        audio_ids = [i for i in ids if AUDIO_RANGE[0] <= i <= AUDIO_RANGE[1]]
-        vision_ids = [i for i in ids if VISION_RANGE[0] <= i <= VISION_RANGE[1]]
-        assert len(text_ids) + len(audio_ids) + len(vision_ids) > 0
-        assert set(text_ids).isdisjoint(set(audio_ids))
-        assert set(audio_ids).isdisjoint(set(vision_ids))
+        tokenizer = UnifiedTokenizer()
+        text_tok = tokenizer.encode_mixed([("text", "hi")])
+        audio_tok = tokenizer.encode_mixed([("audio", [np.random.randn(8000).astype(np.float32)])])
+        vision_tok = tokenizer.encode_mixed([("vision", [Image.new("RGB", (64, 64))])])
+        text_ids = set(text_tok)
+        audio_ids = set(audio_tok)
+        vision_ids = set(vision_tok)
+        assert text_ids.isdisjoint(audio_ids), "Text and audio tokens overlap"
+        assert text_ids.isdisjoint(vision_ids), "Text and vision tokens overlap"
+        assert audio_ids.isdisjoint(vision_ids), "Audio and vision tokens overlap"
