@@ -1,0 +1,108 @@
+meta:
+  title: "Tri-Transformer Eval 工程 Bug 修复与完善"
+  platform: Backend/Python
+  task_id: backend-server-eval
+  created_at: "2026-03-30"
+  requirement_version: "1.0"
+  risk_level: LOW
+
+scope:
+  in:
+    - "eval/pipeline/rag_evaluator.py - 解耦 torch 依赖"
+    - "eval/pipeline/ci_gate.py - 修复阈值逻辑"
+    - "eval/pipeline/eval_pipeline.py - 集成所有 Evaluator"
+    - "eval/loss/__init__.py - 补全导出"
+    - "eval/pipeline/__init__.py - 补全导出"
+    - "eval/tests/ - 补全 torch importorskip + 集成测试"
+  out:
+    - "eval/loss/ 算法实现（不修改）"
+    - "eval/ground_truth/ 实现（不修改）"
+    - "backend/ 模块"
+
+file_changes:
+  - path: "eval/pipeline/rag_evaluator.py"
+    action: modify
+    desc: "移除 FactualHallucinationLoss import，内联 _compute_factual_support 纯 Python 实现"
+
+  - path: "eval/pipeline/ci_gate.py"
+    action: modify
+    desc: "修复 rag_recall_at_5 <= threshold 为 < threshold"
+
+  - path: "eval/pipeline/eval_pipeline.py"
+    action: modify
+    desc: "在 run() 中调用 ControlEvaluator.evaluate() 和 DialogCohesionEvaluator.evaluate()，支持可选 dialog_sessions 参数"
+
+  - path: "eval/loss/__init__.py"
+    action: modify
+    desc: "导出 BaseLoss, FactualHallucinationLoss, SourceAttributionLoss, AbstentionCalibrationLoss, HallucinationLoss, RetrievalRelevanceLoss, CoverageLoss, RankingConsistencyLoss, RAGLoss, ContrastiveControlLoss, KnowledgeConsistencyLoss, InstructionFollowingLoss, ControlAlignmentLoss, TotalLoss"
+
+  - path: "eval/pipeline/__init__.py"
+    action: modify
+    desc: "导出 EvalPipeline, RAGEvaluator, GenerationEvaluator, HallucinationEvaluator, ControlEvaluator, DialogCohesionEvaluator, CIGate, ReportGenerator"
+
+  - path: "eval/tests/test_hallucination_loss.py"
+    action: modify
+    desc: "在 class 级别添加 torch = pytest.importorskip('torch')"
+
+  - path: "eval/tests/test_rag_loss.py"
+    action: modify
+    desc: "在 class 级别添加 torch = pytest.importorskip('torch')"
+
+  - path: "eval/tests/test_control_alignment_loss.py"
+    action: modify
+    desc: "在 class 级别添加 torch = pytest.importorskip('torch')"
+
+  - path: "eval/tests/test_eval_pipeline.py"
+    action: modify
+    desc: "修复 TestRAGEvaluator 和 TestHallucinationEvaluator 测试（无 torch 依赖后可通过），添加集成测试 TestEvalPipelineIntegration"
+
+implementation_notes:
+  key_changes:
+    rag_evaluator_decoupling:
+      problem: "from eval.loss.hallucination_loss import FactualHallucinationLoss 触发 torch import"
+      solution: |
+        在 RAGEvaluator 内部直接实现 _compute_factual_support 方法（token overlap），
+        与 hallucination_loss.py 中的逻辑相同，但不 import torch 模块。
+      pattern: |
+        def _compute_factual_support(self, claim: str, docs: list) -> float:
+            claim_tokens = set(claim.lower().split())
+            max_overlap = 0.0
+            for doc in docs:
+                doc_tokens = set(doc.lower().split())
+                if not claim_tokens:
+                    continue
+                overlap = len(claim_tokens & doc_tokens) / len(claim_tokens)
+                max_overlap = max(max_overlap, overlap)
+            return max_overlap
+
+    ci_gate_fix:
+      problem: "recall_5 <= threshold 错误阻断 recall==threshold 的情况"
+      solution: "改为 recall_5 < threshold"
+      note: "bert_score_f1 使用 <= 是正确的（bert_score <= 阈值才阻断）"
+
+    eval_pipeline_integration:
+      problem: "ControlEvaluator 和 DialogCohesionEvaluator 未被调用"
+      solution: |
+        run() 增加 dialog_sessions: Optional[List[List[Dict]]] = None 参数
+        调用 ctrl_evaluator.evaluate(gt_samples, model_outputs)
+        若 dialog_sessions 不为 None 则调用 dialog_evaluator.evaluate(dialog_sessions)
+
+    torch_skip:
+      problem: "无 torch 环境下测试 ERROR"
+      solution: "在每个 test class 首行添加：torch = pytest.importorskip('torch')"
+
+validation:
+  acceptance:
+    - "pytest eval/tests/ 在无 torch 环境下：0 ERROR，只有 PASS 和 SKIP"
+    - "RAGEvaluator 可在无 torch 环境 import 和运行"
+    - "CIGate: recall_at_5=0.90, threshold=0.90 → PASS"
+    - "CIGate: recall_at_5=0.89, threshold=0.90 → FAIL"
+    - "EvalPipeline.run() 返回包含 instruction_following_rate 字段"
+    - "from eval.loss import HallucinationLoss 可用"
+    - "from eval.pipeline import EvalPipeline 可用"
+
+  test_commands:
+    - ".venv/bin/pytest eval/tests/ -v --tb=short"
+
+rollback:
+  strategy: "git revert，所有修改为增量修复，无结构破坏性改动"

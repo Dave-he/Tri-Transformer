@@ -1,17 +1,27 @@
 from typing import List, Dict, Any
-from eval.loss.hallucination_loss import FactualHallucinationLoss
 
 
 class RAGEvaluator:
     def __init__(self):
-        self._fact_loss = FactualHallucinationLoss()
+        pass
+
+    def _compute_factual_support(self, claim: str, docs: List[str]) -> float:
+        claim_tokens = set(claim.lower().split())
+        max_overlap = 0.0
+        for doc in docs:
+            doc_tokens = set(doc.lower().split())
+            if not claim_tokens:
+                continue
+            overlap = len(claim_tokens & doc_tokens) / len(claim_tokens)
+            max_overlap = max(max_overlap, overlap)
+        return max_overlap
 
     def _compute_faithfulness(self, outputs: List[Dict], gt_samples: List[Dict]) -> float:
         scores = []
         for output, gt in zip(outputs, gt_samples):
             answer = output.get("generated_answer", "")
             docs = output.get("retrieved_docs", gt.get("source_docs", []))
-            support = self._fact_loss._compute_factual_support(answer, docs)
+            support = self._compute_factual_support(answer, docs)
             scores.append(min(support, 1.0))
         return sum(scores) / len(scores) if scores else 0.0
 

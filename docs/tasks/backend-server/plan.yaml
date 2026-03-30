@@ -1,0 +1,176 @@
+plan:
+  meta:
+    source_tech_doc: "docs/tasks/backend-server/tech-solution.yaml"
+    scope: "P0|P1"
+    test_coverage_target: 100
+    min_tests_per_feature: 2
+    task_id: backend-server-eval
+
+  tasks:
+    - id: "T0-1"
+      priority: "P0"
+      type: "test"
+      title: "测试：torch importorskip - test_hallucination_loss.py"
+      test_type: "pure"
+      file: "eval/tests/test_hallucination_loss.py"
+      given: "无 torch 的测试环境"
+      when: "运行 test_hallucination_loss.py"
+      then:
+        - "所有 class 内第一行为 torch = pytest.importorskip('torch')"
+        - "无 torch 时测试输出 SKIP 而非 ERROR"
+      depends_on: []
+
+    - id: "T0-2"
+      priority: "P0"
+      type: "test"
+      title: "测试：torch importorskip - test_rag_loss.py"
+      test_type: "pure"
+      file: "eval/tests/test_rag_loss.py"
+      given: "无 torch 的测试环境"
+      when: "运行 test_rag_loss.py"
+      then:
+        - "无 torch 时测试 SKIP，有 torch 时 PASS"
+      depends_on: []
+
+    - id: "T0-3"
+      priority: "P0"
+      type: "test"
+      title: "测试：torch importorskip - test_control_alignment_loss.py"
+      test_type: "pure"
+      file: "eval/tests/test_control_alignment_loss.py"
+      given: "无 torch 的测试环境"
+      when: "运行 test_control_alignment_loss.py"
+      then:
+        - "无 torch 时测试 SKIP，有 torch 时 PASS"
+      depends_on: []
+
+    - id: "T1-1"
+      priority: "P0"
+      type: "test"
+      title: "测试：RAGEvaluator 无 torch 可运行"
+      test_type: "pure"
+      file: "eval/tests/test_eval_pipeline.py"
+      given: "无 torch 环境"
+      when: "import RAGEvaluator 并调用 evaluate()"
+      then:
+        - "不抛出 ModuleNotFoundError: torch"
+        - "返回包含 faithfulness, answer_relevancy, context_recall 的 dict"
+      depends_on: []
+
+    - id: "T1-2"
+      priority: "P0"
+      type: "test"
+      title: "测试：CIGate 阈值边界"
+      test_type: "pure"
+      file: "eval/tests/test_eval_pipeline.py"
+      given: "CIGate(rag_recall_at_5_threshold=0.90)"
+      when: "检查 recall_at_5=0.90 和 recall_at_5=0.89"
+      then:
+        - "recall_at_5=0.90 → PASS（等于阈值不阻断）"
+        - "recall_at_5=0.89 → FAIL"
+      depends_on: []
+
+    - id: "T2-1"
+      priority: "P0"
+      type: "test"
+      title: "测试：EvalPipeline 集成所有 Evaluator"
+      test_type: "pure"
+      file: "eval/tests/test_eval_pipeline.py"
+      given: "MOCK_GT_SAMPLES 和 MOCK_MODEL_OUTPUTS"
+      when: "调用 EvalPipeline.run(gt_samples, model_outputs)"
+      then:
+        - "返回 dict 包含 instruction_following_rate"
+        - "返回 dict 包含 topic_consistency"
+        - "ci_gate_passed 字段存在"
+      depends_on: []
+
+    - id: "T3-1"
+      priority: "P1"
+      type: "test"
+      title: "测试：loss/__init__.py 导出"
+      test_type: "pure"
+      file: "eval/tests/test_eval_pipeline.py"
+      given: "无 torch 环境"
+      when: "from eval.loss import HallucinationLoss 不需要 torch"
+      then:
+        - "FactualHallucinationLoss 可被 import（仅 class，不实例化 nn.Module）"
+      depends_on: []
+
+    - id: "P0-1"
+      priority: "P0"
+      type: "code"
+      title: "修复：RAGEvaluator 移除 torch 依赖"
+      files: ["eval/pipeline/rag_evaluator.py"]
+      depends_on: ["T1-1"]
+      definition_of_done:
+        - "移除 from eval.loss.hallucination_loss import FactualHallucinationLoss"
+        - "内联 _compute_factual_support 方法（token overlap 纯 Python）"
+        - "测试 T1-1 通过"
+
+    - id: "P0-2"
+      priority: "P0"
+      type: "code"
+      title: "修复：CIGate 阈值逻辑"
+      files: ["eval/pipeline/ci_gate.py"]
+      depends_on: ["T1-2"]
+      definition_of_done:
+        - "recall_5 <= threshold 改为 recall_5 < threshold"
+        - "测试 T1-2 通过"
+
+    - id: "P0-3"
+      priority: "P0"
+      type: "code"
+      title: "修复：EvalPipeline 集成 ControlEvaluator + DialogEvaluator"
+      files: ["eval/pipeline/eval_pipeline.py"]
+      depends_on: ["T2-1"]
+      definition_of_done:
+        - "run() 增加 dialog_sessions 可选参数"
+        - "调用 ctrl_evaluator.evaluate() 并合并结果"
+        - "dialog_sessions 不为 None 时调用 dialog_evaluator.evaluate()"
+        - "测试 T2-1 通过"
+
+    - id: "P0-4"
+      priority: "P0"
+      type: "code"
+      title: "修复：torch 测试添加 importorskip"
+      files:
+        - "eval/tests/test_hallucination_loss.py"
+        - "eval/tests/test_rag_loss.py"
+        - "eval/tests/test_control_alignment_loss.py"
+      depends_on: ["T0-1", "T0-2", "T0-3"]
+      definition_of_done:
+        - "每个 test class 首行添加 torch = pytest.importorskip('torch')"
+        - "无 torch 环境下：0 ERROR，pytest 输出 SKIP"
+
+    - id: "P1-1"
+      priority: "P1"
+      type: "code"
+      title: "完善：eval/loss/__init__.py 导出"
+      files: ["eval/loss/__init__.py"]
+      depends_on: ["T3-1"]
+      definition_of_done:
+        - "导出所有公共类：BaseLoss, FactualHallucinationLoss, SourceAttributionLoss, AbstentionCalibrationLoss, HallucinationLoss, RetrievalRelevanceLoss, CoverageLoss, RankingConsistencyLoss, RAGLoss, ContrastiveControlLoss, KnowledgeConsistencyLoss, InstructionFollowingLoss, ControlAlignmentLoss, TotalLoss"
+
+    - id: "P1-2"
+      priority: "P1"
+      type: "code"
+      title: "完善：eval/pipeline/__init__.py 导出"
+      files: ["eval/pipeline/__init__.py"]
+      depends_on: []
+      definition_of_done:
+        - "导出：EvalPipeline, RAGEvaluator, GenerationEvaluator, HallucinationEvaluator, ControlEvaluator, DialogCohesionEvaluator, CIGate, ReportGenerator"
+
+  commands:
+    test: ".venv/bin/pytest eval/tests/ -v --tb=short"
+    lint: "flake8 eval/pipeline/rag_evaluator.py eval/pipeline/ci_gate.py eval/pipeline/eval_pipeline.py eval/loss/__init__.py eval/pipeline/__init__.py --max-line-length=120 2>/dev/null || true"
+    typecheck: ""
+
+  acceptance:
+    - "pytest eval/tests/ 无 ERROR，只有 PASS 和 SKIP"
+    - "CIGate 边界测试通过"
+    - "EvalPipeline 返回包含 instruction_following_rate"
+    - "from eval.loss import HallucinationLoss 可用"
+    - "from eval.pipeline import EvalPipeline 可用"
+
+  rollback:
+    - "git revert 对应 commit，修改均为增量修复"

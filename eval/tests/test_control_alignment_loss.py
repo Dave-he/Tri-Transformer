@@ -1,5 +1,6 @@
 import pytest
-import torch
+
+torch = pytest.importorskip("torch")
 
 
 class TestContrastiveControlLoss:

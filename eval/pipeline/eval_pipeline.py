@@ -30,14 +30,19 @@ class EvalPipeline:
         model_outputs: List[Dict],
         report_name: str = "eval_report",
         mode: str = "dataset",
+        dialog_sessions: Optional[List[List[Dict]]] = None,
     ) -> Dict[str, Any]:
         rag_results = self.rag_evaluator.evaluate(gt_samples, model_outputs)
         predictions = [o.get("generated_answer", "") for o in model_outputs]
         references = [g.get("answer", "") for g in gt_samples[:len(predictions)]]
         gen_results = self.gen_evaluator.evaluate(predictions, references)
         hall_results = self.hall_evaluator.evaluate(gt_samples, model_outputs)
-        all_results = {**rag_results, **gen_results, **hall_results}
+        ctrl_results = self.ctrl_evaluator.evaluate(gt_samples, model_outputs)
+        all_results = {**rag_results, **gen_results, **hall_results, **ctrl_results}
         all_results["rag_recall_at_5"] = rag_results.get("context_recall", 0.0)
+        if dialog_sessions is not None:
+            dialog_results = self.dialog_evaluator.evaluate(dialog_sessions)
+            all_results.update(dialog_results)
         report = self.report_generator.generate(all_results, report_name=report_name)
         passed, gate_message = self.ci_gate.check(all_results)
         report["ci_gate_passed"] = passed

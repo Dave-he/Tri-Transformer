@@ -1,0 +1,82 @@
+task_id: backend-server-eval
+title: "Tri-Transformer Eval 工程完善开发"
+platform: Backend/Python
+created_at: "2026-03-30"
+
+overview: |
+  基于已有 eval/ 骨架代码，修复 Bug、补全实现、完善测试覆盖，
+  使 eval 工程达到可一键运行、CI 门禁有效的生产就绪状态。
+
+feature_requests:
+  - id: FR-01
+    title: "修复 RAGEvaluator torch 循环依赖"
+    desc: "RAGEvaluator 直接 import HallucinationLoss 导致 torch 依赖污染，需改为纯 Python 实现"
+    acceptance_criteria:
+      - "RAGEvaluator 可在无 torch 环境下 import 和运行"
+      - "faithfulness/answer_relevancy/context_recall 指标计算正确"
+
+  - id: FR-02
+    title: "修复 CIGate 阈值方向 Bug"
+    desc: "rag_recall_at_5 判断为 <= 而非 < threshold，逻辑反向"
+    acceptance_criteria:
+      - "recall_at_5 < threshold 时 CI FAIL"
+      - "recall_at_5 == threshold 时 CI PASS（边界正确）"
+      - "bert_score_f1 <= threshold 时 CI FAIL（原逻辑 bert_score 保持 <=）"
+
+  - id: FR-03
+    title: "完善 EvalPipeline 集成所有 Evaluator"
+    desc: "EvalPipeline.run() 未调用 ControlEvaluator 和 DialogCohesionEvaluator"
+    acceptance_criteria:
+      - "run() 返回结果包含 instruction_following_rate, topic_consistency"
+      - "multi_turn_consistency 在提供 dialog_sessions 时被计算"
+      - "默认 dialog_sessions=None 时返回空值不报错"
+
+  - id: FR-04
+    title: "实现 total_loss.py 总损失聚合"
+    desc: "TotalLoss 模块需整合三类损失的加权聚合，支持权重配置"
+    acceptance_criteria:
+      - "TotalLoss(w1, w2, w3) 支持权重初始化"
+      - "forward 方法返回 w1*L_rag + w2*L_ctrl + w3*L_hall"
+      - "get_metrics() 返回各子损失值字典"
+
+  - id: FR-05
+    title: "完善 loss/__init__.py 和 pipeline/__init__.py 导出"
+    desc: "各模块 __init__.py 缺少统一导出"
+    acceptance_criteria:
+      - "from eval.loss import HallucinationLoss, RAGLoss, ControlAlignmentLoss, TotalLoss 可用"
+      - "from eval.pipeline import EvalPipeline, CIGate, ReportGenerator 可用"
+
+  - id: FR-06
+    title: "为 torch 依赖测试添加 skip 机制"
+    desc: "在无 torch 环境下 torch 相关测试应 skip 而非 fail"
+    acceptance_criteria:
+      - "pytest.importorskip('torch') 应用于所有 loss 单元测试"
+      - "无 torch 环境下 pytest 输出为 SKIP 非 ERROR"
+      - "有 torch 环境下所有测试 PASS"
+
+  - id: FR-07
+    title: "端到端集成测试"
+    desc: "覆盖完整 EvalPipeline.run() 流程，使用 mock 数据"
+    acceptance_criteria:
+      - "EvalPipeline.run() 可用 MOCK_GT_SAMPLES + MOCK_MODEL_OUTPUTS 完整运行"
+      - "返回报告包含所有预期字段"
+      - "CIGate 阻断和放行场景均有测试覆盖"
+      - "ReportGenerator 生成 JSON + MD 双格式文件"
+
+  - id: FR-08
+    title: "scripts/ CLI 端到端可运行验证"
+    desc: "build_ground_truth.py 和 run_eval.py 需可在测试中被验证"
+    acceptance_criteria:
+      - "build_ground_truth.py --docs_dir 可接受临时目录并输出 GT"
+      - "run_eval.py --gt_file 可接受生成的 GT 文件并输出报告"
+      - "ci_check.py 读取报告后正确输出 PASS/FAIL"
+
+non_functional:
+  - "所有测试在无 torch 环境下 pass 率 ≥ 90%（torch 测试允许 skip）"
+  - "pytest eval/tests/ 无 ERROR，只允许 SKIP 和 PASS"
+  - "模块 import 无副作用，不触发 model 加载"
+
+constraints:
+  - "不修改现有算法逻辑，只做修复和补全"
+  - "保持与现有代码风格一致（无注释，纯 Python + minimal torch）"
+  - "eval/ 模块与 backend/ 解耦，不引入 backend 依赖"

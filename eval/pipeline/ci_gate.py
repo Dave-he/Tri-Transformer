@@ -20,7 +20,7 @@ class CIGate:
                 f"hallucination_rate {hall_rate:.3f} >= threshold {self.hallucination_rate_threshold}"
             )
         recall_5 = report.get("rag_recall_at_5", 1.0)
-        if recall_5 <= self.rag_recall_at_5_threshold:
+        if recall_5 < self.rag_recall_at_5_threshold:
             failures.append(
                 f"rag_recall_at_5 {recall_5:.3f} <= threshold {self.rag_recall_at_5_threshold}"
             )

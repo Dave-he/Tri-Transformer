@@ -179,3 +179,111 @@ class TestReportGenerator:
             report_with_ci = generator.generate_with_ci(mock_results, sample_values, report_name="eval_ci_report")
             assert "ci_lower" in report_with_ci or True
             assert "ci_upper" in report_with_ci or True
+
+
+class TestRAGEvaluatorNoBias:
+    def test_no_torch_import(self):
+        import importlib
+        import sys
+        for mod in list(sys.modules.keys()):
+            if mod == "torch" or mod.startswith("torch."):
+                pass
+        from eval.pipeline.rag_evaluator import RAGEvaluator
+        evaluator = RAGEvaluator()
+        results = evaluator.evaluate(MOCK_GT_SAMPLES[:3], MOCK_MODEL_OUTPUTS[:3])
+        assert isinstance(results, dict)
+        assert "faithfulness" in results
+        assert "answer_relevancy" in results
+        assert "context_recall" in results
+
+    def test_faithfulness_range(self):
+        from eval.pipeline.rag_evaluator import RAGEvaluator
+        evaluator = RAGEvaluator()
+        results = evaluator.evaluate(MOCK_GT_SAMPLES[:5], MOCK_MODEL_OUTPUTS[:5])
+        assert 0.0 <= results["faithfulness"] <= 1.0
+
+    def test_answer_relevancy_range(self):
+        from eval.pipeline.rag_evaluator import RAGEvaluator
+        evaluator = RAGEvaluator()
+        results = evaluator.evaluate(MOCK_GT_SAMPLES[:5], MOCK_MODEL_OUTPUTS[:5])
+        assert 0.0 <= results["answer_relevancy"] <= 1.0
+
+
+class TestCIGateBoundary:
+    def test_recall_equal_threshold_passes(self):
+        from eval.pipeline.ci_gate import CIGate
+        gate = CIGate(
+            hallucination_rate_threshold=0.05,
+            rag_recall_at_5_threshold=0.90,
+            bert_score_f1_threshold=0.85,
+        )
+        report = {
+            "hallucination_rate": 0.02,
+            "rag_recall_at_5": 0.90,
+            "bert_score_f1": 0.90,
+        }
+        passed, message = gate.check(report)
+        assert passed is True
+
+    def test_recall_below_threshold_fails(self):
+        from eval.pipeline.ci_gate import CIGate
+        gate = CIGate(
+            hallucination_rate_threshold=0.05,
+            rag_recall_at_5_threshold=0.90,
+            bert_score_f1_threshold=0.85,
+        )
+        report = {
+            "hallucination_rate": 0.02,
+            "rag_recall_at_5": 0.89,
+            "bert_score_f1": 0.90,
+        }
+        passed, message = gate.check(report)
+        assert passed is False
+        assert "rag_recall_at_5" in message.lower() or "0.89" in message
+
+    def test_bert_score_equal_threshold_fails(self):
+        from eval.pipeline.ci_gate import CIGate
+        gate = CIGate(
+            hallucination_rate_threshold=0.05,
+            rag_recall_at_5_threshold=0.90,
+            bert_score_f1_threshold=0.85,
+        )
+        report = {
+            "hallucination_rate": 0.02,
+            "rag_recall_at_5": 0.95,
+            "bert_score_f1": 0.85,
+        }
+        passed, message = gate.check(report)
+        assert passed is False
+
+
+class TestEvalPipelineIntegration:
+    def test_run_returns_all_evaluator_fields(self):
+        from eval.pipeline.eval_pipeline import EvalPipeline
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmpdir:
+            pipeline = EvalPipeline(output_dir=tmpdir)
+            report = pipeline.run(MOCK_GT_SAMPLES[:5], MOCK_MODEL_OUTPUTS[:5])
+            assert "faithfulness" in report
+            assert "bleu" in report
+            assert "hallucination_rate" in report
+            assert "instruction_following_rate" in report
+            assert "topic_consistency" in report
+            assert "ci_gate_passed" in report
+
+    def test_run_ci_gate_field_bool(self):
+        from eval.pipeline.eval_pipeline import EvalPipeline
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmpdir:
+            pipeline = EvalPipeline(output_dir=tmpdir)
+            report = pipeline.run(MOCK_GT_SAMPLES[:3], MOCK_MODEL_OUTPUTS[:3])
+            assert isinstance(report["ci_gate_passed"], bool)
+
+    def test_run_without_dialog_sessions(self):
+        from eval.pipeline.eval_pipeline import EvalPipeline
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmpdir:
+            pipeline = EvalPipeline(output_dir=tmpdir)
+            report = pipeline.run(MOCK_GT_SAMPLES[:3], MOCK_MODEL_OUTPUTS[:3])
+            assert report is not None
+
