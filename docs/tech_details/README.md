@@ -64,7 +64,8 @@
 
 | 文档 | 技术名词 | 核心内容 |
 |---|---|---|
-| [22_frontier_models.md](./22_frontier_models.md) | GPT-4o / Moshi / VALL-E 2 / Qwen2-Audio / AnyGPT / Chameleon | 六大系统架构对比矩阵、Tri-Transformer 差异化分析 |
+| [22_frontier_models.md](./22_frontier_models.md) | GPT-4o / Moshi / VALL-E 2 / Qwen2-Audio / AnyGPT / Chameleon / **Qwen3** | 七大系统架构对比矩阵、Tri-Transformer 差异化分析 |
+| [23_qwen3.md](./23_qwen3.md) | **Qwen3**（Dense + MoE）| QK-Norm / GQA / rope_θ=1M / Thinking Mode / 插拔方案 / LoRA 训练 |
 
 ---
 

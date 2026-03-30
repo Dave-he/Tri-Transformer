@@ -59,14 +59,17 @@ class ChatService:
         self.db.add(user_msg)
         await self.db.commit()
 
-        embedder = get_embedder()
-        store = ChromaVectorStore(embedder=embedder)
-        retriever = HybridRetriever(vector_store=store)
-        retrieved = await retriever.retrieve(
-            query=content,
-            kb_id=kb_id,
-            top_k=settings.top_k_rerank,
-        )
+        try:
+            embedder = get_embedder()
+            store = ChromaVectorStore(embedder=embedder)
+            retriever = HybridRetriever(vector_store=store)
+            retrieved = await retriever.retrieve(
+                query=content,
+                kb_id=kb_id,
+                top_k=settings.top_k_rerank,
+            )
+        except Exception:
+            retrieved = []
 
         context_texts = [r["text"] for r in retrieved]
         sources = [

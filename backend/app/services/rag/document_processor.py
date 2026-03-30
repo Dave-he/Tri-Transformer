@@ -1,7 +1,4 @@
 import io
-from typing import Optional
-
-import fitz
 
 
 class DocumentProcessor:
@@ -41,6 +38,7 @@ class DocumentProcessor:
         return chunks
 
     def _extract_pdf(self, content: bytes) -> str:
+        import fitz
         doc = fitz.open(stream=io.BytesIO(content), filetype="pdf")
         texts = []
         for page in doc:

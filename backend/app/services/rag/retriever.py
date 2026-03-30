@@ -1,7 +1,5 @@
 from typing import Optional
 
-from rank_bm25 import BM25Okapi
-
 from app.services.rag.vector_store import ChromaVectorStore
 
 
@@ -34,6 +32,7 @@ class HybridRetriever:
 
         texts = [r["text"] for r in vector_results]
         tokenized = [t.lower().split() for t in texts]
+        from rank_bm25 import BM25Okapi
         bm25 = BM25Okapi(tokenized)
         bm25_scores = bm25.get_scores(query.lower().split())
 

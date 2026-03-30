@@ -1,5 +1,4 @@
 from datetime import datetime
-from typing import Literal, Optional
 from pydantic import BaseModel, field_validator
 
 from app.models.train_job import VALID_JOB_TYPES

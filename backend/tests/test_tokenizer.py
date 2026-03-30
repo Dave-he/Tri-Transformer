@@ -3,7 +3,7 @@ import pytest
 
 AUDIO_RANGE = (130000, 134000)
 VISION_RANGE = (135000, 145000)
-TEXT_MAX = 128000
+TEXT_MAX = 151936
 
 
 class TestTextTokenizer:

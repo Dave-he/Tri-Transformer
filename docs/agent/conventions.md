@@ -17,7 +17,20 @@
 - 依赖注入通过 `FastAPI Depends()`，不直接实例化服务
 - 全异步 (async/await)，禁止同步阻塞 I/O
 
-### Eval 模块（Python）
+### PyTorch 模型（`backend/app/model/`）
+- 所有模型组件继承 `nn.Module`，实现标准 `forward()` 方法
+- **核心架构**：基于 Qwen3 风格组件（`branches.py`），优先使用以下基础层：
+  - `Qwen3RMSNorm`：替代 `nn.LayerNorm`（Pre-Norm 位置）
+  - `Qwen3Attention`：替代 `nn.MultiheadAttention`（GQA + QK-Norm + RoPE）
+  - `Qwen3MLP`：替代标准 FFN（SwiGLU 激活）
+  - `Qwen3BidirectionalEncoderLayer`：双向编码器层（C-Transformer 用）
+  - `Qwen3DecoderLayer`：因果解码器层（I/O-Transformer 用）
+- **禁止**在模型代码中使用 `nn.MultiheadAttention` 或 `nn.LayerNorm`（保持架构一致性）
+- `TriTransformerConfig` 中 Qwen3 关键参数：`rope_theta=1_000_000`、`num_key_value_heads`（GQA 组数）、`use_qk_norm=True`
+- MoE 通过 `use_moe=True` 启用，`moe_layer_freq` 控制专家层频率（默认每隔 1 层）
+- 模型权重初始化遵循 zero-init（adaLN 输出层）和 kaiming（线性层）规范
+
+
 - 自定义损失函数继承 `nn.Module`，实现 `forward()` 方法
 - 评估器通过 `EvalPipeline` 组合，不直接调用单个评估器
 - CI 门禁阈值配置在 `eval/pipeline/ci_gate.py`

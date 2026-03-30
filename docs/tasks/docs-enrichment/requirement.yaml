@@ -1,0 +1,36 @@
+task_id: docs-enrichment
+title: 整理技术文档 docs，搜索知识进行扩充细节
+type: documentation
+platform: Backend
+mode: standard
+
+description: |
+  对 Tri-Transformer 项目 docs/tech_details/ 下的 22 篇子技术文档进行系统性知识扩充，
+  通过搜索最新学术进展、工程实践细节，补充现有文档中薄弱的章节，提升文档的技术深度和参考价值。
+
+scope:
+  files_to_enrich:
+    - docs/tech_details/04_dit.md          # DiT - 需补充 SD3/FLUX 最新架构细节
+    - docs/tech_details/07_encodec.md      # EnCodec - 需补充 Mimi/DAC 对比和实践细节
+    - docs/tech_details/08_snac.md         # SNAC - 需补充 Orpheus TTS 使用细节
+    - docs/tech_details/09_vqgan.md        # VQ-GAN - 需补充 COSMOS Tokenizer 细节
+    - docs/tech_details/10_siglip.md       # SigLIP - 需补充 InternVL/Qwen2-VL 集成细节
+    - docs/tech_details/11_bpe.md          # BPE - 需补充多模态 Token 空间合并实践
+    - docs/tech_details/12_anygpt_any2any.md  # AnyGPT - 需补充 Emu3 最新进展
+    - docs/tech_details/13_chameleon.md    # Chameleon - 需补充训练稳定化方案
+    - docs/tech_details/15_milvus.md       # Milvus - 需补充 2.4 稀疏向量和实践细节
+    - docs/tech_details/16_llamaindex.md   # LlamaIndex - 需补充 Workflows/Agent 细节
+    - docs/tech_details/21_webrtc.md       # WebRTC - 需补充 aiortc 实践和 WHIP/WHEP 细节
+    - docs/技术调研报告.md                   # 主报告 - 需补充 2025 年最新进展
+
+acceptance_criteria:
+  - ac_1: 每篇文档至少新增 1 个"最新进展（2024-2025）"小节或扩充现有小节
+  - ac_2: 新增内容包含具体的论文引用（arXiv 编号或会议名称）
+  - ac_3: 新增内容包含可运行的代码示例（PyTorch/Python）或具体配置参数
+  - ac_4: 每篇文档扩充后新增不少于 30 行内容
+  - ac_5: 技术调研报告主文件补充 2025 年最新综合进展章节
+
+constraints:
+  - 不改变现有文档的章节结构，仅在末尾或相应章节末尾追加扩充内容
+  - 代码示例需与项目现有技术栈（PyTorch、FastAPI、React）兼容
+  - 引用内容需有据可查（arXiv 论文或官方文档）

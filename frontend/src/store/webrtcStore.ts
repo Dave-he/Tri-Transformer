@@ -36,6 +36,7 @@ export const useWebRTCStore = create<WebRTCState>((set, get) => ({
               sdpMLineIndex: event.candidate.sdpMLineIndex,
             });
           } catch {
+              set({ error: '发送 ICE candidate 失败' });
           }
         }
       };

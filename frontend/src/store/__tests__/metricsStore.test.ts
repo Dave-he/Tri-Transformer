@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 
-vi.mock('../../api/training', () => ({
+vi.mock('../../api/metrics', () => ({
   getMetricsApi: vi.fn(),
   getTrainingStatusApi: vi.fn(),
 }));
@@ -19,7 +19,7 @@ describe('metricsStore', () => {
   });
 
   it('fetchMetrics updates metrics state', async () => {
-    const { getMetricsApi } = await import('../../api/training');
+    const { getMetricsApi } = await import('../../api/metrics');
     const { useMetricsStore } = await import('../metricsStore');
 
     vi.mocked(getMetricsApi).mockResolvedValue({
@@ -35,7 +35,7 @@ describe('metricsStore', () => {
   });
 
   it('fetchStatus updates trainingStatus state', async () => {
-    const { getTrainingStatusApi } = await import('../../api/training');
+    const { getTrainingStatusApi } = await import('../../api/metrics');
     const { useMetricsStore } = await import('../metricsStore');
 
     vi.mocked(getTrainingStatusApi).mockResolvedValue({

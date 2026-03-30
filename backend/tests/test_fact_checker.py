@@ -1,6 +1,7 @@
 import pytest
 import pytest_asyncio
 from httpx import AsyncClient, ASGITransport
+from unittest.mock import AsyncMock, patch
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
 from sqlalchemy.pool import StaticPool
 
@@ -40,8 +41,17 @@ async def fc_client(fc_engine):
 
     app.dependency_overrides[get_db] = override_get_db
     transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport, base_url="http://test") as ac:
-        yield ac
+    mock_retriever = AsyncMock()
+    mock_retriever.retrieve = AsyncMock(return_value=[])
+    with patch(
+        "app.services.chat.chat_service.ChromaVectorStore",
+        return_value=AsyncMock(),
+    ), patch(
+        "app.services.chat.chat_service.HybridRetriever",
+        return_value=mock_retriever,
+    ):
+        async with AsyncClient(transport=transport, base_url="http://test") as ac:
+            yield ac
     app.dependency_overrides.clear()
 
 

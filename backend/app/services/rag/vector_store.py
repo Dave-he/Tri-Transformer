@@ -1,7 +1,5 @@
 from typing import Optional
 
-import chromadb
-
 from app.services.rag.embedder import BaseEmbedder
 from app.core.config import settings
 
@@ -12,9 +10,12 @@ class ChromaVectorStore:
         persist_dir: Optional[str] = None,
         embedder: Optional[BaseEmbedder] = None,
     ):
+        import chromadb
         self.persist_dir = persist_dir or settings.chroma_persist_dir
-        self._client = chromadb.Client() if persist_dir == ":memory:" else chromadb.PersistentClient(
-            path=self.persist_dir
+        self._client = (
+            chromadb.Client()
+            if persist_dir == ":memory:"
+            else chromadb.PersistentClient(path=self.persist_dir)
         )
         self.embedder = embedder
 
@@ -63,8 +64,14 @@ class ChromaVectorStore:
                 output.append(
                     {
                         "text": doc,
-                        "score": float(results["distances"][0][i]) if results.get("distances") else 0.0,
-                        "metadata": results["metadatas"][0][i] if results.get("metadatas") else {},
+                        "score": (
+                            float(results["distances"][0][i])
+                            if results.get("distances") else 0.0
+                        ),
+                        "metadata": (
+                            results["metadatas"][0][i]
+                            if results.get("metadatas") else {}
+                        ),
                     }
                 )
         return output

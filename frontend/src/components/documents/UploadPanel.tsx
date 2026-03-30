@@ -57,7 +57,7 @@ export const UploadPanel: React.FC = () => {
         style={{ display: 'none' }}
       />
       {uploadProgress !== null && (
-        <div role="progressbar" aria-valuenow={uploadProgress} style={{ marginTop: 8 }}>
+        <div data-testid="upload-progress" role="progressbar" aria-valuenow={uploadProgress} style={{ marginTop: 8 }}>
           <div style={{ height: 8, background: '#f0f0f0', borderRadius: 4 }}>
             <div style={{ height: '100%', width: `${uploadProgress}%`, background: '#1677ff', borderRadius: 4, transition: 'width 0.3s' }} />
           </div>

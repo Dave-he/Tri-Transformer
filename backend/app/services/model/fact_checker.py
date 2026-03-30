@@ -1,7 +1,6 @@
 import hashlib
 import math
 from dataclasses import dataclass
-from typing import Optional
 
 
 @dataclass
@@ -32,7 +31,7 @@ class FactChecker:
     def _cosine_similarity(self, a: list[float], b: list[float]) -> float:
         dot = sum(x * y for x, y in zip(a, b))
         norm_a = math.sqrt(sum(x * x for x in a)) or 1e-8
-        norm_b = math.sqrt(x * x for x in b) if False else math.sqrt(sum(x * x for x in b)) or 1e-8
+        norm_b = math.sqrt(sum(x * x for x in b)) or 1e-8
         return dot / (norm_a * norm_b)
 
     def check(self, generated: str, contexts: list[str]) -> FactCheckResult:
@@ -48,6 +47,6 @@ class FactChecker:
                 max_score = sim
 
         return FactCheckResult(
-            score=max_score,
+            score=min(max_score, 1.0),
             hallucination_detected=max_score < self.threshold,
         )

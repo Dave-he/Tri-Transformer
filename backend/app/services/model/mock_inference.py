@@ -1,14 +1,25 @@
 import random
-from typing import Optional
 
 from app.services.model.inference_service import InferenceService
 
 
 MOCK_RESPONSES = [
-    "Based on the provided context, Tri-Transformer uses a three-branch architecture consisting of I-Transformer (encoder), C-Transformer (controller), and O-Transformer (decoder).",
-    "The RAG system retrieves relevant documents from the knowledge base and provides them as context for the generation process.",
-    "The control branch (C-Transformer) generates control signals that constrain both the encoding and generation branches to ensure knowledge consistency.",
-    "This is a mock response generated for development and testing purposes. The actual model would provide a more contextually relevant answer.",
+    (
+        "Based on the provided context, Tri-Transformer uses a three-branch architecture "
+        "consisting of I-Transformer (encoder), C-Transformer (controller), and O-Transformer (decoder)."
+    ),
+    (
+        "The RAG system retrieves relevant documents from the knowledge base and provides "
+        "them as context for the generation process."
+    ),
+    (
+        "The control branch (C-Transformer) generates control signals that constrain both "
+        "the encoding and generation branches to ensure knowledge consistency."
+    ),
+    (
+        "This is a mock response generated for development and testing purposes. "
+        "The actual model would provide a more contextually relevant answer."
+    ),
 ]
 
 

@@ -1,5 +1,4 @@
 import hashlib
-from typing import Union
 
 
 AUDIO_OFFSET = 130000

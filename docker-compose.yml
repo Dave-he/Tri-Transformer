@@ -15,7 +15,9 @@ services:
       - tri-transformer-net
 
   backend:
-    image: tri-transformer-backend:latest
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
     ports:
       - "8000:8000"
     environment:
@@ -27,6 +29,7 @@ services:
     volumes:
       - ./data/documents:/app/data/documents
       - ./data/models:/app/data/models
+      - ./backend/tritransformer.db:/app/tritransformer.db
 
   vector_db:
     image: milvusdb/milvus:v2.4.0-standalone

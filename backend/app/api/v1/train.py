@@ -9,8 +9,6 @@ from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sess
 from app.core.config import settings
 from app.core.database import get_db
 from app.dependencies import get_current_user
-from app.model.trainer import TriTransformerTrainer, TrainerConfig
-from app.model.tri_transformer import TriTransformerConfig
 from app.models.train_job import TrainJob
 from app.models.user import User
 from app.schemas.train import TrainJobRequest, TrainJobResponse
@@ -36,6 +34,8 @@ def _job_to_response(job) -> TrainJobResponse:
 def _run_training(job_id: str, job_type: str, user_config: dict, db_url: str):
     """在后台线程中同步执行 PyTorch 训练，完成后更新 DB 状态。"""
     import asyncio
+    from app.model.trainer import TriTransformerTrainer, TrainerConfig
+    from app.model.tri_transformer import TriTransformerConfig
 
     cancel_event = _cancel_events.setdefault(job_id, threading.Event())
 
@@ -97,7 +97,7 @@ def _run_training(job_id: str, job_type: str, user_config: dict, db_url: str):
         trainer.train()
         final_status = "cancelled" if cancel_event.is_set() else "completed"
         asyncio.run(_update_db(final_status, metrics_history))
-    except Exception as exc:
+    except Exception:
         asyncio.run(_update_db("failed", metrics_history))
     finally:
         _cancel_events.pop(job_id, None)

@@ -1,0 +1,79 @@
+meta:
+  title: Tri-Transformer 前端工程开发 - 测试修复与代码质量
+  platform: web
+  task_id: frontend-dev
+  requirement_version: "1"
+  risk_level: LOW
+
+summary: |
+  修复前端4个失败测试用例，根因为：
+  1. UploadPanel: Ant Design Upload.Dragger 内部渲染 progressbar 与自定义 progressbar 冲突
+  2. AuthGuard: 测试间 vi.mock + 动态 import 模块缓存问题导致 mock 不生效
+  修复策略：使用 data-testid 替代 role 选择器、添加 beforeEach vi.resetModules() 清理缓存
+
+root_cause_analysis:
+  - issue: UploadPanel "Found multiple progressbar"
+    cause: |
+      Ant Design Upload 组件内部会渲染带有 role="progressbar" 的进度条元素。
+      当测试代码也使用 getByRole('progressbar') 时，找到多个元素（Antd内部 + 自定义）。
+    fix: |
+      给自定义 progressbar div 添加 data-testid="upload-progress"，
+      测试改用 getByTestId('upload-progress')。
+  - issue: UploadPanel timeout
+    cause: |
+      vi.mock 在顶部声明，但测试中用 await import('../UploadPanel') 动态导入。
+      由于 vi.mock 是 hoisted 的但模块缓存可能导致 mock 失效，
+      后续测试拿到的是缓存的真实模块，发出真实网络请求导致 timeout。
+    fix: |
+      在 beforeEach 中调用 vi.resetModules() 清除模块缓存，
+      确保每个测试用例都获得新的 mock 实例。
+  - issue: AuthGuard "Found multiple elements"
+    cause: |
+      两个测试用例都用 await import('../MainLayout') 动态导入，
+      由于模块缓存，第二次导入的是相同实例，
+      但 vi.mock 的 mockImplementation 已被第一个测试的 mock 覆盖，
+      导致状态互相污染，两个 AuthGuard 实例同时存在。
+    fix: |
+      每个 it 块用 beforeEach + vi.resetModules()，
+      或将 AuthGuard 测试改为同步 mock 方式（不用 await import）。
+
+file_changes:
+  - path: frontend/src/components/documents/UploadPanel.tsx
+    action: modify
+    reason: 给自定义 progressbar 添加 data-testid="upload-progress"
+    changes:
+      - 在 role="progressbar" 的 div 上添加 data-testid="upload-progress"
+
+  - path: frontend/src/components/documents/__tests__/UploadPanel.test.tsx
+    action: modify
+    reason: |
+      修复测试：
+      1. 添加 beforeEach(vi.resetModules) 清除模块缓存
+      2. getByRole('progressbar') 改为 getByTestId('upload-progress')
+      3. timeout 从 5s 改为 10s 应对动态 import 开销
+
+  - path: frontend/src/layouts/__tests__/MainLayout.test.tsx
+    action: modify
+    reason: |
+      修复测试：
+      1. 在每个 it 块的 beforeEach 中添加 vi.resetModules()
+      2. 使用静态 import 替代 await import 的动态 import 以避免缓存问题
+      3. 或为每个测试独立设置 mock 并清理
+
+validation:
+  acceptance:
+    - id: AC-01
+      desc: npx vitest run 全部 102 个测试通过
+      command: cd frontend && npx vitest run
+    - id: AC-02
+      desc: TypeScript 零类型错误
+      command: cd frontend && npx tsc --noEmit
+    - id: AC-03
+      desc: ESLint 零 warning
+      command: cd frontend && npx eslint src/components/documents/__tests__/UploadPanel.test.tsx src/layouts/__tests__/MainLayout.test.tsx src/components/documents/UploadPanel.tsx
+
+implementation_notes: |
+  - 修复测试时保持组件行为不变，只改 data-testid 属性
+  - vi.resetModules() 需在 beforeEach 而非 afterEach 中调用（确保下次测试前清理）
+  - Ant Design Upload 内部实现细节在不同版本可能变化，用 data-testid 更稳定
+  - 不引入新的外部依赖

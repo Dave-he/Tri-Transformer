@@ -1,0 +1,206 @@
+plan:
+  meta:
+    task_id: tri-transformer-training
+    source_tech_doc: "docs/tasks/tri-transformer-training/tech-solution.yaml"
+    scope: "P0"
+    test_coverage_target: 80
+    min_tests_per_feature: 3
+    platform: backend-python
+
+  tasks:
+    # ==================== TEST TASKS (RED phase) ====================
+
+    - id: T1-1
+      priority: P0
+      type: test
+      title: "测试 TriTransformerModel.forward() tuple 解包修复"
+      test_type: pure
+      file: "backend/tests/test_tri_transformer_forward.py"
+      given: "TriTransformerModel 使用 small_config 初始化"
+      when: "调用 forward(src, tgt)"
+      then:
+        - "返回 TriTransformerOutput 且 logits.shape == (B, T, vocab_size)"
+        - "i_hidden, control_signal, o_hidden 均为 tensor"
+        - "不抛出 ValueError 或 unpacking 异常"
+      depends_on: []
+
+    - id: T2-1
+      priority: P0
+      type: test
+      title: "测试 TextTokenizer BPE 升级"
+      test_type: pure
+      file: "backend/tests/test_text_tokenizer.py"
+      given: "TextTokenizer() 在 offline 模式下初始化（mock AutoTokenizer）"
+      when: "调用 encode('hello world') 和 decode(ids)"
+      then:
+        - "encode 返回 list[int]，所有值在 [0, 151935]"
+        - "decode(encode(text)) 能还原文本"
+        - "vocab_size 属性返回 151936"
+        - "encode('') 返回空列表"
+      depends_on: []
+
+    - id: T3-1
+      priority: P0
+      type: test
+      title: "测试 OllamaClient HTTP API 调用"
+      test_type: pure
+      file: "backend/tests/test_ollama_client.py"
+      given: "mock requests.post 返回 {response: 'hello', done: true}"
+      when: "调用 OllamaClient().generate('gemma3:4b', 'test')"
+      then:
+        - "返回非空字符串 'hello'"
+        - "list_models() 返回模型名称列表"
+        - "is_available() 在 mock 正常时返回 True"
+        - "超时时 is_available() 返回 False"
+      depends_on: []
+
+    - id: T4-1
+      priority: P0
+      type: test
+      title: "测试 ModelScopeDatasetLoader 数据加载"
+      test_type: pure
+      file: "backend/tests/test_dataset_loader.py"
+      given: "mock modelscope.msdatasets.MsDataset.load 返回虚拟对话数据"
+      when: "调用 load('lccc') 和 get_dataloader()"
+      then:
+        - "DataLoader 输出 (src, tgt_in, tgt_out) tuple"
+        - "各 tensor 的 dtype == torch.long"
+        - "shape 为 (batch_size, max_len)"
+        - "支持 belle 数据集格式"
+      depends_on: []
+
+    - id: T5-1
+      priority: P0
+      type: test
+      title: "测试 Trainer 集成 DataLoader"
+      test_type: pure
+      file: "backend/tests/test_trainer_with_dataloader.py"
+      given: "tiny TriTransformerConfig (vocab=256, d_model=64) 和合成 DataLoader"
+      when: "调用 trainer.train(data_loader=loader)"
+      then:
+        - "完成 1 epoch 不抛异常"
+        - "返回 metrics 列表，loss 为有限浮点数"
+        - "data_loader=None 时 fallback 随机数据（向后兼容）"
+      depends_on: []
+
+    # ==================== CODE TASKS (GREEN phase) ====================
+
+    - id: P0-1
+      priority: P0
+      type: code
+      title: "修复 TriTransformerModel.forward() tuple 解包"
+      files:
+        - "backend/app/model/tri_transformer.py"
+      depends_on: ["T1-1"]
+      definition_of_done:
+        - "i_branch 调用解包 (i_enc, _)"
+        - "c_branch 调用解包 (ctrl_signal, _, _)"
+        - "o_branch 调用解包 (logits, o_hidden, _)"
+        - "T1-1 测试通过"
+
+    - id: P0-2
+      priority: P0
+      type: code
+      title: "升级 TextTokenizer 为 Qwen2.5 BPE（vocab_size=151936）"
+      files:
+        - "backend/app/model/tokenizer/text_tokenizer.py"
+      depends_on: ["T2-1"]
+      definition_of_done:
+        - "使用 transformers.AutoTokenizer 加载 Qwen/Qwen2.5-0.5B"
+        - "提供 offline=True 模式"
+        - "vocab_size 属性返回 151936"
+        - "T2-1 测试通过"
+
+    - id: P0-3
+      priority: P0
+      type: code
+      title: "新增 OllamaClient"
+      files:
+        - "backend/app/services/model/ollama_client.py"
+      depends_on: ["T3-1"]
+      definition_of_done:
+        - "generate(model, prompt) 调用 POST /api/generate"
+        - "list_models() 调用 GET /api/tags"
+        - "is_available() 健康检查"
+        - "超时设置 60s"
+        - "T3-1 测试通过"
+
+    - id: P0-4
+      priority: P0
+      type: code
+      title: "新增 ModelScopeDatasetLoader"
+      files:
+        - "backend/app/services/train/dataset_loader.py"
+      depends_on: ["T4-1", "P0-2"]
+      definition_of_done:
+        - "支持 lccc / belle 数据集"
+        - "get_dataloader 输出 (src, tgt_in, tgt_out) tensor"
+        - "padding + truncation 逻辑完整"
+        - "T4-1 测试通过"
+
+    - id: P0-5
+      priority: P0
+      type: code
+      title: "升级 Trainer 支持真实 DataLoader"
+      files:
+        - "backend/app/model/trainer.py"
+      depends_on: ["T5-1", "P0-4"]
+      definition_of_done:
+        - "train(data_loader) 遍历真实 batch"
+        - "data_loader=None fallback 随机数据"
+        - "支持 max_steps 早停"
+        - "T5-1 测试通过"
+
+    - id: P0-6
+      priority: P0
+      type: code
+      title: "新增 install_deps.sh 依赖安装脚本"
+      files:
+        - "backend/scripts/install_deps.sh"
+      depends_on: []
+      definition_of_done:
+        - "安装 torch==2.5.1 (CPU) / modelscope / transformers / datasets"
+        - "幂等：已安装则跳过"
+        - "脚本有执行权限"
+
+    - id: P0-7
+      priority: P0
+      type: code
+      title: "新增 train.py 命令行训练入口"
+      files:
+        - "backend/scripts/train.py"
+      depends_on: ["P0-4", "P0-5"]
+      definition_of_done:
+        - "支持 --dataset lccc|belle|dummy"
+        - "支持 --epochs / --batch-size / --device / --max-steps"
+        - "输出每 epoch loss 到 stdout"
+        - "python backend/scripts/train.py --dataset dummy --epochs 1 成功"
+
+    - id: P1-1
+      priority: P1
+      type: code
+      title: "更新 test_tokenizer.py 文本 ID 范围断言"
+      files:
+        - "backend/tests/test_tokenizer.py"
+      depends_on: ["P0-2"]
+      definition_of_done:
+        - "TEXT_MAX 从 128000 更新为 151936"
+        - "现有测试全部通过"
+
+  commands:
+    test: "cd backend && python -m pytest tests/test_tri_transformer_forward.py tests/test_text_tokenizer.py tests/test_ollama_client.py tests/test_dataset_loader.py tests/test_trainer_with_dataloader.py -v"
+    lint: "cd backend && python -m flake8 app/model/tri_transformer.py app/model/tokenizer/text_tokenizer.py app/model/trainer.py app/services/train/dataset_loader.py app/services/model/ollama_client.py scripts/train.py --max-line-length=120"
+    typecheck: ""
+
+  acceptance:
+    - "AC1: DataLoader 输出 (src, tgt_in, tgt_out) tensor"
+    - "AC2: Trainer 使用真实数据完成 1 epoch，loss 有限"
+    - "AC3: OllamaClient.generate 返回非空字符串"
+    - "AC4: train.py --dataset dummy --epochs 1 可运行"
+    - "AC5: TextTokenizer encode() ids 在 [0, 151935]"
+    - "AC6: 现有 pytest 全部通过"
+    - "AC7: install_deps.sh 执行后可 import torch"
+
+  rollback:
+    - "tri_transformer.py 修复向后兼容，rollback 还原 forward() 解包"
+    - "TextTokenizer 保留 fallback 模式（离线时降级 char-level）"

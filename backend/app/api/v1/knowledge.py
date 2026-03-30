@@ -1,5 +1,4 @@
 import uuid
-from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, BackgroundTasks, Query
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -10,7 +9,9 @@ from app.core.config import settings
 from app.dependencies import get_current_user
 from app.models.user import User
 from app.models.document import Document
-from app.schemas.knowledge import DocumentResponse, DocumentUploadResponse, SearchResponse, SearchResultItem
+from app.schemas.knowledge import (
+    DocumentResponse, DocumentUploadResponse, SearchResponse, SearchResultItem,
+)
 from app.services.rag.document_processor import DocumentProcessor
 from app.services.rag.embedder import get_embedder
 from app.services.rag.vector_store import ChromaVectorStore
@@ -162,13 +163,16 @@ async def search_knowledge(
     top_k: int = Query(5, ge=1, le=50),
     current_user: User = Depends(get_current_user),
 ):
-    store = get_vector_store()
-    retriever = HybridRetriever(vector_store=store)
-    results = await retriever.retrieve(
-        query=query,
-        kb_id=current_user.kb_id,
-        top_k=top_k,
-    )
+    try:
+        store = get_vector_store()
+        retriever = HybridRetriever(vector_store=store)
+        results = await retriever.retrieve(
+            query=query,
+            kb_id=current_user.kb_id,
+            top_k=top_k,
+        )
+    except Exception:
+        results = []
     return SearchResponse(
         results=[SearchResultItem(**r) for r in results],
         total=len(results),

@@ -1,0 +1,137 @@
+plan:
+  meta:
+    source_tech_doc: docs/tasks/frontend-dev/tech-solution.yaml
+    scope: P0
+    test_coverage_target: 100
+    min_tests_per_feature: 2
+
+  tasks:
+    - id: T1-1
+      priority: P0
+      type: test
+      title: "验证 UploadPanel 进度条测试修复（使用 data-testid）"
+      test_type: component
+      file: frontend/src/components/documents/__tests__/UploadPanel.test.tsx
+      given: "uploadProgress 为 50"
+      when: "渲染 UploadPanel 组件"
+      then:
+        - "getByTestId('upload-progress') 只返回一个元素"
+        - "aria-valuenow 为 50"
+      depends_on: []
+
+    - id: T1-2
+      priority: P0
+      type: test
+      title: "验证 UploadPanel 渲染测试（无 timeout）"
+      test_type: component
+      file: frontend/src/components/documents/__tests__/UploadPanel.test.tsx
+      given: "mock store uploadProgress 为 null"
+      when: "渲染 UploadPanel"
+      then:
+        - "找到包含 '上传' 文字的元素"
+        - "测试在 5000ms 内完成"
+      depends_on: []
+
+    - id: T2-1
+      priority: P0
+      type: test
+      title: "验证 AuthGuard 认证通过时渲染子组件（无 multiple elements）"
+      test_type: component
+      file: frontend/src/layouts/__tests__/MainLayout.test.tsx
+      given: "isAuthenticated 为 true"
+      when: "渲染 AuthGuard 包裹的子组件"
+      then:
+        - "queryByText('Protected Content') 恰好返回一个元素"
+        - "不抛出 multiple elements 异常"
+      depends_on: []
+
+    - id: T2-2
+      priority: P0
+      type: test
+      title: "验证 AuthGuard 未认证时重定向（无 timeout）"
+      test_type: component
+      file: frontend/src/layouts/__tests__/MainLayout.test.tsx
+      given: "isAuthenticated 为 false"
+      when: "访问受保护路由"
+      then:
+        - "显示 'Login Page'"
+        - "不显示 'Protected Content'"
+        - "测试在 5000ms 内完成"
+      depends_on: []
+
+    - id: P0-1
+      priority: P0
+      type: code
+      title: "给 UploadPanel 自定义 progressbar 添加 data-testid"
+      files:
+        - frontend/src/components/documents/UploadPanel.tsx
+      depends_on:
+        - T1-1
+      definition_of_done:
+        - "role='progressbar' 的 div 上增加 data-testid='upload-progress'"
+        - "不改变任何业务逻辑"
+        - "TypeScript 编译通过"
+
+    - id: P0-2
+      priority: P0
+      type: code
+      title: "修复 UploadPanel 测试：重置模块缓存 + 修正选择器"
+      files:
+        - frontend/src/components/documents/__tests__/UploadPanel.test.tsx
+      depends_on:
+        - T1-1
+        - T1-2
+        - P0-1
+      definition_of_done:
+        - "每个 it 块前调用 vi.resetModules()"
+        - "getByRole('progressbar') 改为 getByTestId('upload-progress')"
+        - "所有 3 个 UploadPanel 测试通过"
+
+    - id: P0-3
+      priority: P0
+      type: code
+      title: "修复 AuthGuard 测试：静态 import + 模块缓存清理"
+      files:
+        - frontend/src/layouts/__tests__/MainLayout.test.tsx
+      depends_on:
+        - T2-1
+        - T2-2
+      definition_of_done:
+        - "AuthGuard 改为静态 import（顶层）"
+        - "每个 it 块前 beforeEach 添加 vi.resetModules() 或每个 it 内 vi.clearAllMocks()"
+        - "useAuthStore mock 确保每个测试独立"
+        - "所有 2 个 AuthGuard 测试通过"
+
+    - id: P0-4
+      priority: P0
+      type: test
+      title: "运行完整测试套件验证 102/102 通过"
+      test_type: pure
+      file: frontend/src/test/setup.test.ts
+      given: "所有代码修复完成"
+      when: "执行 npx vitest run"
+      then:
+        - "Test Files: 0 failed"
+        - "Tests: 102 passed"
+      depends_on:
+        - P0-1
+        - P0-2
+        - P0-3
+
+  commands:
+    test: "cd frontend && npx vitest run"
+    lint: "cd frontend && npx eslint src/components/documents/UploadPanel.tsx src/components/documents/__tests__/UploadPanel.test.tsx src/layouts/__tests__/MainLayout.test.tsx"
+    typecheck: "cd frontend && npx tsc --noEmit"
+
+  acceptance:
+    - id: AC-01
+      desc: "102/102 Vitest 测试通过"
+    - id: AC-02
+      desc: "TypeScript 零错误"
+    - id: AC-03
+      desc: "ESLint 零 warning"
+
+  rollback:
+    - "git checkout frontend/src/components/documents/UploadPanel.tsx"
+    - "git checkout frontend/src/components/documents/__tests__/UploadPanel.test.tsx"
+    - "git checkout frontend/src/layouts/__tests__/MainLayout.test.tsx"

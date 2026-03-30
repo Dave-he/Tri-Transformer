@@ -1,0 +1,153 @@
+meta:
+  task_id: tri-transformer-training
+  title: "Tri-Transformer 模型训练流程实现"
+  platform: backend-python
+  created_at: "2026-03-30"
+  requirement_version: "1.0.0"
+
+background: |
+  Tri-Transformer (I/C/O 三分支) PyTorch 模型架构已完整实现，但训练器使用随机虚拟数据。
+  需接入 ModelScope 中文对话数据集（LCCC/BELLE），集成本地 ollama LLM（gemma3:4b）用于数据增强，
+  将 TextTokenizer 升级为 Qwen2.5 BPE（vocab_size=151936），提供独立训练命令行入口。
+
+scope:
+  in:
+    - ModelScope 数据集加载器（LCCC / BELLE）
+    - Trainer 集成真实 DataLoader
+    - ollama HTTP API 客户端
+    - TextTokenizer BPE 升级（Qwen2.5）
+    - install_deps.sh 依赖安装脚本
+    - train.py 命令行入口脚本
+    - TriTransformerModel.forward() 接口修复（适配新 branches.py 返回值）
+  out:
+    - FastAPI 训练 API 接口变更（保持兼容）
+    - C-Transformer adaLN 逻辑变更
+    - 前端代码
+
+design:
+  tokenizer:
+    strategy: "使用 transformers.AutoTokenizer 加载 Qwen/Qwen2.5-0.5B 词表"
+    vocab_size: 151936
+    local_cache: "~/.cache/huggingface/hub/"
+    fallback: "若网络不通则降级使用 tiktoken cl100k_base（词表约100K）"
+    pad_token: "<|endoftext|>"
+    eos_token: "<|im_end|>"
+
+  dataset_loader:
+    supported_datasets:
+      lccc:
+        modelscope_id: "AI-ModelScope/LCCC-base-split"
+        split: "train"
+        text_field: "conversation"
+        max_samples: 50000
+      belle:
+        modelscope_id: "BelleGroup/train_0.5M_CN"
+        split: "train"
+        text_field: "instruction+output"
+        max_samples: 50000
+    batch_construction:
+      src: "对话历史 token ids（左 padding 到 max_len）"
+      tgt_in: "回复 token ids（含 BOS，右截断到 max_len）"
+      tgt_out: "tgt_in 右移 1 位（用于 cross-entropy 目标）"
+      padding: "使用 pad_token_id=0 右 padding"
+
+  ollama_client:
+    base_url: "http://localhost:11434"
+    default_model: "gemma3:4b"
+    endpoints:
+      generate: "POST /api/generate"
+      tags: "GET /api/tags"
+    timeout_seconds: 60
+    use_case: "数据增强：为对话样本生成幻觉标签 / 摘要"
+
+  trainer_integration:
+    change: "train() 方法支持传入 DataLoader，无 DataLoader 时 fallback 随机数据"
+    epoch_loop: "遍历 DataLoader batches，每 batch 前向+反向+优化"
+    max_steps: "支持 --max-steps 早停（调试用）"
+
+  tri_transformer_fix:
+    issue: "tri_transformer.py 调用 branches.py 接口不匹配（返回值解包错误）"
+    fix:
+      i_branch: "i_enc, _ = self.i_branch(src, ...) 解包 tuple"
+      c_branch: "ctrl_signal, _, _ = self.c_branch(i_enc, ...) 解包 tuple"
+      o_branch: "logits, o_hidden, _ = self.o_branch(tgt, ...) 解包 tuple"
+
+file_changes:
+  - path: "backend/app/model/tokenizer/text_tokenizer.py"
+    op: modify
+    reason: "升级为 transformers AutoTokenizer，vocab_size=151936"
+
+  - path: "backend/app/model/tri_transformer.py"
+    op: modify
+    reason: "修复 forward() 解包 branches.py 新返回值（tuple）"
+
+  - path: "backend/app/model/trainer.py"
+    op: modify
+    reason: "train() 支持 DataLoader 参数，替换 _make_dummy_batch 为真实数据"
+
+  - path: "backend/app/services/train/dataset_loader.py"
+    op: add
+    reason: "新增 ModelScopeDatasetLoader，支持 LCCC / BELLE"
+
+  - path: "backend/app/services/model/ollama_client.py"
+    op: add
+    reason: "新增 OllamaClient，封装 ollama HTTP API"
+
+  - path: "backend/scripts/install_deps.sh"
+    op: add
+    reason: "安装训练依赖：torch / modelscope / transformers / datasets"
+
+  - path: "backend/scripts/train.py"
+    op: add
+    reason: "命令行训练入口，支持 --dataset / --epochs / --batch-size / --device / --max-steps"
+
+  - path: "backend/tests/test_dataset_loader.py"
+    op: add
+    reason: "单元测试：DataLoader mock ModelScope 下载"
+
+  - path: "backend/tests/test_ollama_client.py"
+    op: add
+    reason: "单元测试：OllamaClient mock HTTP"
+
+  - path: "backend/tests/test_text_tokenizer.py"
+    op: add
+    reason: "单元测试：BPE tokenizer encode/decode"
+
+  - path: "backend/tests/test_trainer_with_dataloader.py"
+    op: add
+    reason: "单元测试：Trainer 集成 DataLoader 1 epoch"
+
+  - path: "backend/tests/test_tri_transformer_forward.py"
+    op: add
+    reason: "单元测试：TriTransformerModel.forward() 接口修复验证"
+
+validation:
+  acceptance:
+    - id: AC1
+      check: "DataLoader 输出 (src, tgt_in, tgt_out) tensor，dtype=torch.long"
+    - id: AC2
+      check: "Trainer.train(dataloader) 1 epoch 不抛异常，loss 为有限浮点数"
+    - id: AC3
+      check: "OllamaClient.generate('gemma3:4b', 'hello') 返回非空字符串"
+    - id: AC4
+      check: "python backend/scripts/train.py --dataset lccc --epochs 1 --max-steps 5 成功退出"
+    - id: AC5
+      check: "TextTokenizer().encode('hello') 所有值在 [0, 151935]"
+    - id: AC6
+      check: "cd backend && pytest tests/ 全部通过"
+    - id: AC7
+      check: "bash backend/scripts/install_deps.sh && python -c 'import torch, modelscope, transformers'"
+
+risks:
+  - level: MEDIUM
+    desc: "ModelScope 下载慢或超时"
+    mitigation: "设置 MODELSCOPE_CACHE 本地目录，单测使用 mock"
+  - level: MEDIUM
+    desc: "Qwen2.5 tokenizer 首次下载需网络"
+    mitigation: "本地 cache 检测，提供 offline 模式"
+  - level: LOW
+    desc: "tri_transformer.py forward() 接口修复引入回归"
+    mitigation: "新增 test_tri_transformer_forward.py 覆盖原有行为"
+  - level: LOW
+    desc: "vocab_size 变更导致 embedding 维度不兼容已保存 checkpoint"
+    mitigation: "当前无已保存 checkpoint，接受 breaking change"

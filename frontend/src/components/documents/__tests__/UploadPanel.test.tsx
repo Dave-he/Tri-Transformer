@@ -1,5 +1,5 @@
-import { describe, it, expect, vi } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { render, screen, fireEvent, cleanup } from '@testing-library/react';
 
 vi.mock('../../../store/documentStore', () => ({
   useDocumentStore: vi.fn(() => ({
@@ -9,15 +9,33 @@ vi.mock('../../../store/documentStore', () => ({
   })),
 }));
 
+import { UploadPanel } from '../UploadPanel';
+import { useDocumentStore } from '../../../store/documentStore';
+
 describe('UploadPanel', () => {
-  it('renders upload area', async () => {
-    const { UploadPanel } = await import('../UploadPanel');
+  beforeEach(() => {
+    cleanup();
+    vi.mocked(useDocumentStore).mockReturnValue({
+      upload: vi.fn(),
+      uploadProgress: null,
+      documents: [],
+      deleteDocument: vi.fn(),
+      search: vi.fn(),
+      searchResults: [],
+    } as never);
+  });
+
+  afterEach(() => {
+    cleanup();
+    vi.clearAllMocks();
+  });
+
+  it('renders upload area', () => {
     render(<UploadPanel />);
     expect(screen.getByText(/上传/i)).toBeDefined();
   });
 
-  it('shows progress bar when uploadProgress is set', async () => {
-    const { useDocumentStore } = await import('../../../store/documentStore');
+  it('shows progress bar when uploadProgress is set', () => {
     vi.mocked(useDocumentStore).mockReturnValue({
       upload: vi.fn(),
       uploadProgress: 50,
@@ -27,14 +45,12 @@ describe('UploadPanel', () => {
       searchResults: [],
     } as never);
 
-    const { UploadPanel } = await import('../UploadPanel');
     render(<UploadPanel />);
 
-    expect(screen.getByRole('progressbar')).toBeDefined();
+    expect(screen.getByTestId('upload-progress')).toBeDefined();
   });
 
-  it('shows error for unsupported file format', async () => {
-    const { useDocumentStore } = await import('../../../store/documentStore');
+  it('shows error for unsupported file format', () => {
     const mockUpload = vi.fn().mockRejectedValue(new Error('Unsupported format'));
     vi.mocked(useDocumentStore).mockReturnValue({
       upload: mockUpload,
@@ -45,7 +61,6 @@ describe('UploadPanel', () => {
       searchResults: [],
     } as never);
 
-    const { UploadPanel } = await import('../UploadPanel');
     render(<UploadPanel />);
 
     const input = screen.getByTestId('file-input');

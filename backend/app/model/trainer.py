@@ -1,6 +1,5 @@
-import asyncio
 import threading
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Callable, Optional
 
 import torch
@@ -115,12 +114,45 @@ class TriTransformerTrainer:
 
         return loss.item()
 
-    def train(self, data_loader=None) -> list[dict]:
+    def _train_epoch_with_loader(self, data_loader, epoch: int, max_steps: int = None) -> float:
+        self.model.train()
+        total_loss = 0.0
+        steps = 0
+
+        for batch in data_loader:
+            if self.cancel_event.is_set():
+                break
+            if max_steps is not None and steps >= max_steps:
+                break
+
+            src, tgt_in, tgt_out = batch
+            src = src.to(self.config.device)
+            tgt_in = tgt_in.to(self.config.device)
+            tgt_out = tgt_out.to(self.config.device)
+
+            self.optimizer.zero_grad()
+            output = self.model(src, tgt_in)
+            logits = output.logits
+            B, T, V = logits.shape
+            loss = self.criterion(logits.reshape(B * T, V), tgt_out.reshape(B * T))
+            loss.backward()
+            nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=1.0)
+            self.optimizer.step()
+            total_loss += loss.item()
+            steps += 1
+
+        self.scheduler.step()
+        return total_loss / max(steps, 1)
+
+    def train(self, data_loader=None, max_steps: int = None) -> list[dict]:
         history = []
         for epoch in range(1, self.config.num_epochs + 1):
             if self.cancel_event.is_set():
                 break
-            loss = self.train_epoch(epoch)
+            if data_loader is not None:
+                loss = self._train_epoch_with_loader(data_loader, epoch, max_steps=max_steps)
+            else:
+                loss = self.train_epoch(epoch)
             metrics = {
                 "epoch": epoch,
                 "loss": round(loss, 6),

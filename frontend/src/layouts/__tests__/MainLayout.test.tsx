@@ -1,10 +1,13 @@
-import { describe, it, expect, vi } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { render, screen, cleanup } from '@testing-library/react';
 import { MemoryRouter, Routes, Route } from 'react-router-dom';
 
 vi.mock('../../store/authStore', () => ({
   useAuthStore: vi.fn(),
 }));
+
+import { AuthGuard } from '../MainLayout';
+import { useAuthStore } from '../../store/authStore';
 
 const notAuthState = {
   isAuthenticated: false,
@@ -25,13 +28,19 @@ const authState = {
 };
 
 describe('AuthGuard', () => {
-  it('does not render protected content when not authenticated', async () => {
-    const { useAuthStore } = await import('../../store/authStore');
+  beforeEach(() => {
+    cleanup();
+  });
+
+  afterEach(() => {
+    cleanup();
+    vi.clearAllMocks();
+  });
+
+  it('does not render protected content when not authenticated', () => {
     vi.mocked(useAuthStore as unknown as (s?: unknown) => unknown).mockImplementation(
       (selector: unknown) => typeof selector === 'function' ? (selector as (s: unknown) => unknown)(notAuthState) : notAuthState
     );
-
-    const { AuthGuard } = await import('../MainLayout');
 
     render(
       <MemoryRouter initialEntries={['/chat']}>
@@ -53,13 +62,10 @@ describe('AuthGuard', () => {
     expect(screen.getByText('Login Page')).toBeDefined();
   });
 
-  it('renders children when authenticated', async () => {
-    const { useAuthStore } = await import('../../store/authStore');
+  it('renders children when authenticated', () => {
     vi.mocked(useAuthStore as unknown as (s?: unknown) => unknown).mockImplementation(
       (selector: unknown) => typeof selector === 'function' ? (selector as (s: unknown) => unknown)(authState) : authState
     );
-
-    const { AuthGuard } = await import('../MainLayout');
 
     render(
       <MemoryRouter>

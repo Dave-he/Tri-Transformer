@@ -167,3 +167,133 @@ class CTransformer(nn.Module):
 
 ### 5.4 MAR（Masked AutoRegressive）
 - 将 DiT 的条件调制机制与自回归生成结合，证明扩散特征（continuous diffusion head）可以叠加在 AR Transformer 上，为 Tri-Transformer 的混合生成范式提供参考。
+
+---
+
+## 6. SD3 / FLUX 架构深度解析（与 Tri-Transformer 控制层的关联）
+
+### 6.1 Stable Diffusion 3 的 MM-DiT 架构
+
+SD3（arXiv:2403.03206，Stability AI 2024）将 DiT 推广为**多模态 DiT（MM-DiT）**，文本与图像 Token 在同一 Transformer 中交互，而非文本仅作为条件向量：
+
+```python
+class MMDiTBlock(nn.Module):
+    """
+    SD3 的多模态 DiT Block：文本 Token 与图像 Token 共同参与自注意力
+    C-Transformer 可借鉴此设计实现对话控制向量与内容 Token 的深度融合
+    """
+    def __init__(self, d_model: int, num_heads: int):
+        super().__init__()
+        self.norm_x = nn.LayerNorm(d_model, elementwise_affine=False)
+        self.norm_c = nn.LayerNorm(d_model, elementwise_affine=False)
+        self.attn = nn.MultiheadAttention(d_model, num_heads, batch_first=True)
+        self.adaLN_x = nn.Sequential(nn.SiLU(), nn.Linear(d_model, 6 * d_model))
+        self.adaLN_c = nn.Sequential(nn.SiLU(), nn.Linear(d_model, 6 * d_model))
+        nn.init.zeros_(self.adaLN_x[-1].weight)
+        nn.init.zeros_(self.adaLN_c[-1].weight)
+        nn.init.zeros_(self.adaLN_c[-1].bias)
+        nn.init.zeros_(self.adaLN_x[-1].bias)
+
+    def forward(self, x: torch.Tensor, c: torch.Tensor,
+                timestep_emb: torch.Tensor) -> tuple:
+        """
+        x: [B, Tx, D] 图像/内容 Token
+        c: [B, Tc, D] 控制/条件 Token（对话 C-Transformer 输出）
+        timestep_emb: [B, D] 时间步嵌入（Tri-Transformer 中可替换为对话状态嵌入）
+        """
+        sx, sc = timestep_emb, timestep_emb
+
+        px = self.adaLN_x(sx)
+        shift_x, scale_x, gate_x, shift_xm, scale_xm, gate_xm = px.chunk(6, dim=-1)
+
+        pc = self.adaLN_c(sc)
+        shift_c, scale_c, gate_c, shift_cm, scale_cm, gate_cm = pc.chunk(6, dim=-1)
+
+        x_mod = self.norm_x(x) * (1 + scale_x[:, None]) + shift_x[:, None]
+        c_mod = self.norm_c(c) * (1 + scale_c[:, None]) + shift_c[:, None]
+
+        xc = torch.cat([x_mod, c_mod], dim=1)
+        attn_out, _ = self.attn(xc, xc, xc)
+        attn_x, attn_c = attn_out[:, :x.size(1)], attn_out[:, x.size(1):]
+
+        x = x + gate_x[:, None] * attn_x
+        c = c + gate_c[:, None] * attn_c
+        return x, c
+```
+
+**对 Tri-Transformer C-Transformer 的启示**：MM-DiT 证明条件 Token 与内容 Token 可以在同一注意力层中双向交互，远比单向的 adaLN 调制更强大，适合作为 C-Transformer 高阶版本的架构参考。
+
+### 6.2 FLUX.1 的架构创新（Black Forest Labs, 2024）
+
+FLUX.1（基于 SD3 演进）在 MM-DiT 基础上引入**双流与单流交替层**：
+
+```
+双流阶段（前 N/2 层）：
+  图像 Token ─→ MMDiTBlock ←─ 文本/控制 Token
+  （两者独立线性层，共享注意力）
+
+单流阶段（后 N/2 层）：
+  [图像 Token + 文本 Token 拼接] ─→ 标准 DiT Block
+  （完全融合处理）
+```
+
+| 模型 | 参数量 | 特点 | 许可证 |
+|---|---|---|---|
+| FLUX.1-dev | 12B | 最高质量，非商业 | FLUX-1-dev 许可 |
+| FLUX.1-schnell | 12B | 4步蒸馏，极快 | Apache 2.0 |
+| FLUX.1-lite | 2.6B | 轻量版 | 商业友好 |
+
+### 6.3 DiT 在视频生成中的时序扩展（CogVideoX, 2024）
+
+CogVideoX（arXiv:2408.06072，智谱 AI 2024）将 DiT 扩展至视频：
+
+```python
+class CogVideoXBlock(nn.Module):
+    """
+    3D 时空 DiT Block：同时处理空间和时序 Token
+    O-Transformer 的视频生成层可参考此设计
+    """
+    def __init__(self, d_model: int, num_heads: int, temporal_len: int):
+        super().__init__()
+        self.spatial_attn = nn.MultiheadAttention(d_model, num_heads, batch_first=True)
+        self.temporal_attn = nn.MultiheadAttention(d_model, num_heads, batch_first=True)
+        self.adaLN = nn.Sequential(nn.SiLU(), nn.Linear(d_model, 6 * d_model))
+        nn.init.zeros_(self.adaLN[-1].weight)
+        nn.init.zeros_(self.adaLN[-1].bias)
+        self.temporal_len = temporal_len
+
+    def forward(self, x: torch.Tensor, c: torch.Tensor) -> torch.Tensor:
+        """
+        x: [B, T*H*W, D] 时空展平 Token
+        c: [B, D] 条件向量
+        """
+        B, THW, D = x.shape
+        T = self.temporal_len
+        HW = THW // T
+
+        shift, scale, gate, shift_t, scale_t, gate_t = \
+            self.adaLN(c).chunk(6, dim=-1)
+
+        x_s = x.reshape(B * T, HW, D)
+        x_s_mod = x_s * (1 + scale[:, None]) + shift[:, None]
+        x_s = x_s + gate[:, None] * self.spatial_attn(x_s_mod, x_s_mod, x_s_mod)[0]
+
+        x_t = x_s.reshape(B, T, HW, D).permute(0, 2, 1, 3).reshape(B * HW, T, D)
+        x_t_mod = x_t * (1 + scale_t[:, None]) + shift_t[:, None]
+        x_t = x_t + gate_t[:, None] * self.temporal_attn(x_t_mod, x_t_mod, x_t_mod)[0]
+        x = x_t.reshape(B, HW, T, D).permute(0, 2, 1, 3).reshape(B, THW, D)
+        return x
+```
+
+### 6.4 DiT 规模律最新数据（2025）
+
+| 模型 | GFLOPs | 参数量 | ImageNet FID | 发布时间 |
+|---|---|---|---|---|
+| DiT-XL/2（原始）| 118.6 | 675M | 2.27 | 2022 |
+| SiT-XL/2 | 118.6 | 675M | 2.06 | 2024 |
+| SD3-Medium | ~18T* | 2B | — | 2024 |
+| FLUX.1-dev | ~100T* | 12B | — | 2024 |
+
+*推理时总 FLOPs（含多步去噪）
+
+**核心结论**：DiT 规模律持续成立——模型越大，质量越高，无明显天花板。这为 Tri-Transformer C-Transformer 选择更大的 DiT 骨干提供了充分理论支撑。

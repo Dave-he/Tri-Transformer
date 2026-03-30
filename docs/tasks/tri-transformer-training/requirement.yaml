@@ -1,0 +1,81 @@
+task_id: tri-transformer-training
+title: "Tri-Transformer 模型训练流程实现"
+platform: Backend/Python
+created_at: "2026-03-30"
+
+background: |
+  Tri-Transformer 是三分支 Transformer 架构（ITransformer / CTransformer / OTransformer），
+  当前 trainer.py 使用随机虚拟数据（_make_dummy_batch）进行训练，缺乏真实数据集支持。
+  需要接入 ModelScope 上的真实对话/问答数据集，并集成本地 ollama 部署的 LLM 用于
+  数据增强、标签生成和 RAG 知识蒸馏。
+
+target_users:
+  - ML 工程师（运行训练任务）
+  - 后端 API（通过 /api/v1/train/jobs 触发）
+
+core_features:
+  - id: F1
+    name: "ModelScope 数据集加载器"
+    desc: "支持从 ModelScope 下载并加载对话/问答数据集（如 LCCC、BELLE、DuReader），提供 PyTorch DataLoader"
+  - id: F2
+    name: "Trainer 数据集集成"
+    desc: "替换 _make_dummy_batch，支持真实数据集的 src/tgt_in/tgt_out batch 构造，含分词和 padding"
+  - id: F3
+    name: "Ollama LLM 集成"
+    desc: "通过 ollama HTTP API 调用本地模型（gemma3:4b / Qwen2.5-3B），用于数据增强标签生成"
+  - id: F4
+    name: "依赖安装脚本"
+    desc: "提供 install_deps.sh 自动安装 torch, modelscope, transformers 等训练依赖"
+  - id: F5
+    name: "训练入口脚本"
+    desc: "提供 train.py 命令行入口，支持 --dataset, --model, --epochs 等参数，可独立于 FastAPI 运行"
+  - id: F6
+    name: "Tokenizer 升级"
+    desc: "将 TextTokenizer 升级为基于 transformers BPE tokenizer（使用 Qwen2.5 词表），vocab_size=151936"
+
+constraints:
+  - "本地 ollama 已部署：gemma3:4b, Qwen2.5-3B-Instruct, Qwen3-VL-4B"
+  - "PyTorch 未安装，需要通过脚本安装"
+  - "优先使用 ModelScope 下载（国内网络）"
+  - "训练可在 CPU 上运行（无 GPU 时 fallback）"
+  - "不破坏已有 FastAPI train API 接口"
+  - "词表大小从 32000 升级至 151936（Qwen2.5 BPE 词表）"
+
+acceptance_criteria:
+  - id: AC1
+    desc: "DataLoader 能成功从 ModelScope 加载 LCCC 或 BELLE 数据集，输出 (src, tgt_in, tgt_out) tensor"
+  - id: AC2
+    desc: "TriTransformerTrainer.train() 使用真实数据集（非随机数据）能完成 ≥1 个 epoch"
+  - id: AC3
+    desc: "Ollama 客户端能成功调用 gemma3:4b 生成文本（用于数据增强）"
+  - id: AC4
+    desc: "train.py 脚本可通过 `python backend/scripts/train.py --dataset lccc --epochs 3` 运行"
+  - id: AC5
+    desc: "TextTokenizer 使用 Qwen2.5 BPE，encode() 输出 token_ids 在 [0, 151935] 范围内"
+  - id: AC6
+    desc: "现有 pytest 测试全部通过（不引入回归）"
+  - id: AC7
+    desc: "install_deps.sh 执行后 `python -c 'import torch, modelscope, transformers'` 成功"
+
+interfaces:
+  dataset_loader:
+    module: "backend/app/services/train/dataset_loader.py"
+    class: "ModelScopeDatasetLoader"
+    methods:
+      - "load(dataset_name: str, split: str) -> Dataset"
+      - "get_dataloader(dataset, batch_size, tokenizer) -> DataLoader"
+  ollama_client:
+    module: "backend/app/services/model/ollama_client.py"
+    class: "OllamaClient"
+    methods:
+      - "generate(model: str, prompt: str) -> str"
+      - "list_models() -> list[str]"
+  tokenizer_upgrade:
+    module: "backend/app/model/tokenizer/text_tokenizer.py"
+    class: "TextTokenizer"
+    change: "使用 transformers AutoTokenizer 加载 Qwen2.5 词表"
+
+risks:
+  - "ModelScope 下载速度受网络影响（MEDIUM）"
+  - "首次 tokenizer 初始化需下载词表文件（MEDIUM）"
+  - "trainer.py 集成真实数据后训练时间大幅增加（LOW，可通过 max_steps 控制）"

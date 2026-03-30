@@ -213,6 +213,7 @@ Tri-Transformer 综合两者优点：
 | **Qwen2-Audio** | ✗ | 有限 | 低 | ✗ | ✗ | ✓ |
 | **AnyGPT** | 有限 | 中 | 低 | ✓ | ✗ | ✓ |
 | **Chameleon** | ✗ | 中 | 低 | ✓ | ✗ | ✓ |
+| **Qwen3-8B/32B** | ✗ | 好（Non-Think）| 中 | ✗ | ✗ | ✓ |
 | **Tri-Transformer** | ✓ | 目标<300ms | **极高** | ✓ | **✓ 实时RAG** | 计划 |
 
 **Tri-Transformer 的核心差异化**：
@@ -220,3 +221,83 @@ Tri-Transformer 综合两者优点：
 2. **任意时刻的硬性可控性**（adaLN-Zero 实时调制）
 3. **深度 RAG + 无幻觉阻断**（所有对手均缺乏此能力）
 4. **双端异构大模型插拔**（最大化利用现有开源模型生态）
+
+---
+
+## 8. Qwen3（阿里通义，2025）
+
+### 8.1 技术概述
+
+Qwen3 是阿里通义团队 2025 年发布的第三代大语言模型，提供 Dense（0.6B–32B）和 MoE（30B-A3B / 235B-A22B）两条产品线，全系引入 **QK-Norm**、**rope_theta=1,000,000** 和独创的**双模式推理**（Thinking / Non-Thinking）。
+
+### 8.2 关键架构参数（Qwen3-8B，推荐插拔规格）
+
+| 参数 | 值 |
+|---|---|
+| 层数 | 36 |
+| hidden_size | 4096 |
+| Q Heads | 32 |
+| KV Heads（GQA） | 8 |
+| FFN intermediate | 12288（SwiGLU）|
+| vocab_size | 151936 |
+| max_position_embeddings | 40960（原生 32K + YaRN 至 128K）|
+| rope_theta | 1,000,000 |
+| QK-Norm | 每头独立 RMSNorm |
+| 训练数据 | ~36T tokens |
+| 后训练 | 四阶段流水线（冷启动 CoT → 推理 RL → 融合 → 通用 RL）|
+
+### 8.3 Qwen3 MoE 参数（Qwen3-235B-A22B）
+
+| 参数 | 值 |
+|---|---|
+| 层数 | 94 |
+| hidden_size | 4096 |
+| Q Heads | 64，KV Heads 4 |
+| 总专家数 | 128 |
+| 每步激活专家 | 8 |
+| 专家 FFN | intermediate=1536 |
+| 总参数 | 235B |
+| **激活参数** | **~22B** |
+
+### 8.4 Thinking Mode vs. Non-Thinking Mode
+
+```python
+from transformers import AutoModelForCausalLM, AutoTokenizer
+import torch
+
+tokenizer = AutoTokenizer.from_pretrained("Qwen/Qwen3-8B")
+model = AutoModelForCausalLM.from_pretrained(
+    "Qwen/Qwen3-8B",
+    torch_dtype=torch.bfloat16,
+    device_map="auto",
+    attn_implementation="flash_attention_2",
+)
+
+def chat(prompt: str, thinking: bool = False) -> str:
+    messages = [{"role": "user", "content": prompt}]
+    text = tokenizer.apply_chat_template(
+        messages,
+        tokenize=False,
+        add_generation_prompt=True,
+        enable_thinking=thinking,
+    )
+    inputs = tokenizer(text, return_tensors="pt").to(model.device)
+    with torch.no_grad():
+        ids = model.generate(**inputs, max_new_tokens=512,
+                             temperature=0.6, top_p=0.9, do_sample=True)
+    out = tokenizer.decode(ids[0][inputs.input_ids.shape[-1]:], skip_special_tokens=False)
+    if "<think>" in out:
+        out = out[out.index("</think>") + len("</think>"):].strip()
+    return out
+```
+
+**Tri-Transformer 中的应用策略**：
+- **实时对话**（I-Transformer 推理阶段）→ `enable_thinking=False`，目标延迟 < 300ms
+- **知识核实与 RAG 内容验证**（Planning Encoder）→ `enable_thinking=True`，牺牲部分延迟换取幻觉率降低
+
+### 8.5 对 Tri-Transformer 的技术启示
+
+1. **QK-Norm 稳定训练**：Qwen3 的 QK-Norm（逐头 RMSNorm）应直接移植到 C-Transformer 的 DiT Block，解决多模态混合训练时的梯度失配。
+2. **rope_theta=1M 长上下文**：I-Transformer 加载 Qwen3 权重后，可原生处理 32K Token 的长对话历史，通过 YaRN 扩展至 128K，覆盖完整会话上下文。
+3. **MoE 弹性部署**：Qwen3-30B-A3B（激活 3B）可在单张 A100 80G 上承载完整 Tri-Transformer 系统（I+C+O），兼顾参数量与推理速度。
+4. **Thinking Mode 与 C-Transformer 联动**：C-Transformer 的状态槽可存储 Thinking 推理的中间状态，作为 O-Transformer 生成的全局规划依据，实现"先深思后流式输出"的新范式。

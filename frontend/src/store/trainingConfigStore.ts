@@ -39,6 +39,7 @@ export const useTrainingConfigStore = create<TrainingConfigState>((set, get) => 
       const progress = await getTrainingProgressApi();
       set({ progress });
     } catch {
+      set({ error: '获取训练进度失败' });
     }
   },
 
@@ -47,6 +48,7 @@ export const useTrainingConfigStore = create<TrainingConfigState>((set, get) => 
       const result = await getAvailableModelsApi();
       set({ availableModels: result.models });
     } catch {
+      set({ error: '获取可用模型失败' });
     }
   },
 

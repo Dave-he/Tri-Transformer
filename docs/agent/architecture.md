@@ -10,12 +10,30 @@ FastAPI 后端 (Python 3.10)
   ├── API Layer: /api/v1/{auth,chat,knowledge,model,train,stream}
   ├── Services: ChatService, InferenceService, FactChecker, RAGRetriever
   ├── Model: TriTransformerModel (PyTorch)
-  │     ITransformer (input encoder)
-  │     CTransformer (control branch, cross-attention)
-  │     OTransformer (output decoder, autoregressive)
+  │     ITransformer  ← Qwen3-8B/14B Dense 骨干（左端插拔）
+  │       └── Qwen3DecoderLayer × 36（GQA 32/8 + QK-Norm + RoPE θ=1M）
+  │     CTransformer  ← DiT 控制中枢（维度对齐 Qwen3 hidden=4096）
+  │       └── State Slots × 16 + Cross-Attn + adaLN-Zero
+  │     OTransformer  ← Qwen3-8B/32B Dense 骨干（右端插拔）
+  │       └── Planning Encoder + Streaming Decoder
+  │     Thinking Mode ← enable_thinking=True/False 动态切换
   └── DB: SQLAlchemy async (SQLite dev / PostgreSQL prod)
-          ChromaDB (vector store)
+          Milvus (vector store，替代 ChromaDB 用于生产)
+          ChromaDB (vector store，开发/测试)
 ```
+
+## Qwen3 骨干配置（推荐规格）
+
+| 位置 | 推荐模型 | 参数量 | 关键超参 | 显存占用 |
+|---|---|---|---|---|
+| I-Transformer（左端）| Qwen3-8B | 8.2B | 36层, hidden=4096, GQA 32/8, rope_θ=1M | ~16GB BF16 |
+| C-Transformer（控制层）| 自研 DiT | ~0.5B | 8层, d=4096, 兼容 Qwen3 维度 | ~1GB |
+| O-Transformer（右端）| Qwen3-8B | 8.2B | 同上 | ~16GB BF16 |
+| MoE 方案（单卡全系统）| Qwen3-30B-A3B | 30B总/3B激活 | 48层, 128专家取8 | ~60GB 加载/~6GB推理 |
+
+**Thinking Mode 策略**：
+- 实时对话（< 300ms 延迟）→ `enable_thinking=False`（Non-Thinking Mode）
+- 复杂知识推理 → `enable_thinking=True`（触发内部 CoT `<think>...</think>`）
 
 ## 前端架构
 
