@@ -1,22 +1,41 @@
+# Core Framework
 fastapi==0.115.6
 uvicorn[standard]==0.32.1
+python-multipart==0.0.19
+
+# Database
 sqlalchemy[asyncio]==2.0.36
 aiosqlite==0.20.0
-asyncpg==0.30.0
+# asyncpg==0.30.0  # PostgreSQL driver, 可选
 alembic==1.14.0
+
+# Pydantic
 pydantic[email]==2.10.3
 pydantic-settings==2.6.1
+
+# Authentication
 python-jose[cryptography]==3.3.0
 passlib[bcrypt]==1.7.4
-python-multipart==0.0.19
+
+# HTTP Client
 httpx==0.28.1
-pytest==8.3.4
-pytest-asyncio==0.24.0
-pytest-cov==6.0.0
+
+# ML & Deep Learning - 使用预编译包
+torch>=2.0.0
+torchvision>=0.15.0
+# numpy 由 torch 自动依赖，无需手动指定
+
+# RAG & Vector DB
 chromadb==0.5.23
 sentence-transformers==3.3.1
 pymupdf==1.25.1
 rank-bm25==0.2.2
-numpy==2.2.1
+
+# Testing
+pytest==8.3.4
+pytest-asyncio==0.24.0
+pytest-cov==6.0.0
+
+# Code Quality
 black==24.10.0
 flake8==7.1.1
