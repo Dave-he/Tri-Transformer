@@ -1,0 +1,64 @@
+task_id: docs-enhance-2026
+title: 技术文档深度增强
+platform: Backend
+mode: standard
+
+summary: |
+  追加增强 8 篇技术文档（6 P0 + 2 P1），在现有章节末尾插入新小节，
+  补充 2024-2025 最新进展，含可运行 PyTorch 代码示例。
+
+approach: append_sections
+strategy: no_existing_content_modification
+
+file_changes:
+  - path: docs/tech_details/09_vqgan.md
+    type: append
+    description: "新增 §5.x COSMOS Tokenizer / OpenMAGVIT2 / LlamaGen 进展小节（≥50行）"
+    risk: LOW
+
+  - path: docs/tech_details/10_siglip.md
+    type: append
+    description: "新增 §5.x SigLIP 2 / InternVL3 / Qwen2-VL 深化小节（≥50行）"
+    risk: LOW
+
+  - path: docs/tech_details/12_anygpt_any2any.md
+    type: append
+    description: "新增 §5.x Emu3 / Janus-Pro / Show-o 进展小节（≥50行）"
+    risk: LOW
+
+  - path: docs/tech_details/15_milvus.md
+    type: append
+    description: "新增 §5.x Milvus 2.5 稀疏向量/GPU索引/混合检索小节（≥50行）"
+    risk: LOW
+
+  - path: docs/tech_details/16_llamaindex.md
+    type: append
+    description: "新增 §5.x Workflows/Multi-agent/LlamaParse 小节（≥50行）"
+    risk: LOW
+
+  - path: docs/tech_details/21_webrtc.md
+    type: append
+    description: "新增 §5.x WHIP/WHEP/aiortc 完整实践小节（≥50行）"
+    risk: LOW
+
+  - path: docs/tech_details/03_bidirectional_encoder.md
+    type: append
+    description: "扩充 §5 ModernBERT深化 / NomicBERT / GTE-Qwen2 小节（≥30行）"
+    risk: LOW
+
+  - path: docs/tech_details/02_chunking_pooling.md
+    type: append
+    description: "扩充 §5 MegaByte / MEGALODON / 超长上下文小节（≥30行）"
+    risk: LOW
+
+acceptance_criteria:
+  - id: ac_1
+    desc: "每篇 P0 文档新增 ≥ 50 行"
+  - id: ac_2
+    desc: "每篇 P1 文档新增 ≥ 30 行"
+  - id: ac_3
+    desc: "所有新增内容含 PyTorch/Python 代码示例"
+  - id: ac_4
+    desc: "引用具体论文 arXiv 编号或官方链接"
+  - id: ac_5
+    desc: "与 Tri-Transformer 的关联说明清晰"

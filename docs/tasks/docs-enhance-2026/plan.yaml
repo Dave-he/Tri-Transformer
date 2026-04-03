@@ -1,0 +1,83 @@
+task_id: docs-enhance-2026
+mode: standard
+
+tasks:
+  - id: T1
+    title: 增强 09_vqgan.md
+    type: content
+    priority: P0
+    files:
+      - docs/tech_details/09_vqgan.md
+    acceptance:
+      - "新增 ≥50 行"
+      - "含 COSMOS Tokenizer / OpenMAGVIT2 / LlamaGen 代码示例"
+
+  - id: T2
+    title: 增强 10_siglip.md
+    type: content
+    priority: P0
+    files:
+      - docs/tech_details/10_siglip.md
+    acceptance:
+      - "新增 ≥50 行"
+      - "含 SigLIP 2 / InternVL3 / Qwen2-VL 代码示例"
+
+  - id: T3
+    title: 增强 12_anygpt_any2any.md
+    type: content
+    priority: P0
+    files:
+      - docs/tech_details/12_anygpt_any2any.md
+    acceptance:
+      - "新增 ≥50 行"
+      - "含 Emu3 / Janus-Pro / Show-o 内容"
+
+  - id: T4
+    title: 增强 15_milvus.md
+    type: content
+    priority: P0
+    files:
+      - docs/tech_details/15_milvus.md
+    acceptance:
+      - "新增 ≥50 行"
+      - "含 Milvus 2.5 稀疏向量 + 混合检索代码"
+
+  - id: T5
+    title: 增强 16_llamaindex.md
+    type: content
+    priority: P0
+    files:
+      - docs/tech_details/16_llamaindex.md
+    acceptance:
+      - "新增 ≥50 行"
+      - "含 Workflows / Multi-agent 代码示例"
+
+  - id: T6
+    title: 增强 21_webrtc.md
+    type: content
+    priority: P0
+    files:
+      - docs/tech_details/21_webrtc.md
+    acceptance:
+      - "新增 ≥50 行"
+      - "含 WHIP/WHEP + aiortc 完整实践代码"
+
+  - id: T7
+    title: 增强 03_bidirectional_encoder.md
+    type: content
+    priority: P1
+    files:
+      - docs/tech_details/03_bidirectional_encoder.md
+    acceptance:
+      - "新增 ≥30 行"
+      - "含 ModernBERT 细节 / GTE-Qwen2 实践"
+
+  - id: T8
+    title: 增强 02_chunking_pooling.md
+    type: content
+    priority: P1
+    files:
+      - docs/tech_details/02_chunking_pooling.md
+    acceptance:
+      - "新增 ≥30 行"
+      - "含 MegaByte / MEGALODON 内容"

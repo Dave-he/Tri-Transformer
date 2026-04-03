@@ -277,3 +277,222 @@ sender.setParameters(params);
 
 ### 6.4 WHIP/WHEP（WebRTC HTTP 媒体协议）
 - 标准化 WebRTC 流媒体推流（WHIP）和拉流（WHEP）协议，简化 WebRTC 与 CDN/流媒体服务的集成，为 Tri-Transformer 的多用户并发流媒体服务提供标准化方案。
+
+---
+
+## 7. WHIP/WHEP 完整实践
+
+### 7.1 WHIP 推流端（浏览器 → 服务器）
+
+WHIP（WebRTC-HTTP Ingestion Protocol，RFC 草案）用单次 HTTP POST 完成 SDP Offer/Answer 交换，替代自定义 WebSocket 信令：
+
+```javascript
+class WHIPClient {
+    constructor(whipEndpoint) {
+        this.endpoint = whipEndpoint;
+        this.pc = new RTCPeerConnection({
+            iceServers: [{ urls: "stun:stun.l.google.com:19302" }],
+        });
+        this.resourceUrl = null;
+    }
+
+    async publish(stream) {
+        stream.getTracks().forEach((track) => this.pc.addTrack(track, stream));
+
+        const offer = await this.pc.createOffer();
+        await this.pc.setLocalDescription(offer);
+
+        await new Promise((resolve) => {
+            if (this.pc.iceGatheringState === "complete") {
+                resolve();
+            } else {
+                this.pc.addEventListener("icegatheringstatechange", () => {
+                    if (this.pc.iceGatheringState === "complete") resolve();
+                });
+            }
+        });
+
+        const resp = await fetch(this.endpoint, {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/sdp",
+                Authorization: `Bearer ${this._getToken()}`,
+            },
+            body: this.pc.localDescription.sdp,
+        });
+
+        if (!resp.ok) throw new Error(`WHIP failed: ${resp.status}`);
+        this.resourceUrl = resp.headers.get("Location");
+
+        const answerSdp = await resp.text();
+        await this.pc.setRemoteDescription({ type: "answer", sdp: answerSdp });
+        console.log("WHIP 推流已建立，资源:", this.resourceUrl);
+    }
+
+    async stop() {
+        if (this.resourceUrl) {
+            await fetch(this.resourceUrl, { method: "DELETE" });
+        }
+        this.pc.close();
+    }
+
+    _getToken() {
+        return localStorage.getItem("tri_transformer_token") || "";
+    }
+}
+
+const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: true });
+const whip = new WHIPClient("https://your-server.com/whip/room-123");
+await whip.publish(stream);
+```
+
+### 7.2 WHEP 拉流端（服务器 → 浏览器）
+
+WHEP（WebRTC-HTTP Egress Protocol）用 HTTP POST 获取服务端媒体流：
+
+```javascript
+class WHEPClient {
+    constructor(whepEndpoint) {
+        this.endpoint = whepEndpoint;
+        this.pc = new RTCPeerConnection({
+            iceServers: [{ urls: "stun:stun.l.google.com:19302" }],
+        });
+    }
+
+    async subscribe(videoEl, audioEl) {
+        this.pc.addTransceiver("audio", { direction: "recvonly" });
+        this.pc.addTransceiver("video", { direction: "recvonly" });
+
+        this.pc.ontrack = (ev) => {
+            if (ev.track.kind === "audio") audioEl.srcObject = ev.streams[0];
+            if (ev.track.kind === "video") videoEl.srcObject = ev.streams[0];
+        };
+
+        const offer = await this.pc.createOffer();
+        await this.pc.setLocalDescription(offer);
+
+        await new Promise((resolve) => {
+            if (this.pc.iceGatheringState === "complete") resolve();
+            else this.pc.addEventListener("icegatheringstatechange", () => {
+                if (this.pc.iceGatheringState === "complete") resolve();
+            });
+        });
+
+        const resp = await fetch(this.endpoint, {
+            method: "POST",
+            headers: { "Content-Type": "application/sdp" },
+            body: this.pc.localDescription.sdp,
+        });
+
+        const answerSdp = await resp.text();
+        await this.pc.setRemoteDescription({ type: "answer", sdp: answerSdp });
+        console.log("WHEP 拉流已建立");
+    }
+}
+
+const whep = new WHEPClient("https://your-server.com/whep/room-123");
+await whep.subscribe(
+    document.getElementById("remoteVideo"),
+    document.getElementById("remoteAudio")
+);
+```
+
+### 7.3 aiortc 实现 WHIP/WHEP 服务端
+
+```python
+import asyncio
+import uuid
+from aiohttp import web
+from aiortc import RTCPeerConnection, RTCSessionDescription, MediaStreamTrack
+from aiortc.contrib.media import MediaRelay
+
+relay = MediaRelay()
+rooms: dict[str, RTCPeerConnection] = {}
+
+async def whip_handler(request: web.Request) -> web.Response:
+    room_id = request.match_info["room_id"]
+    sdp_offer = await request.text()
+
+    pc = RTCPeerConnection()
+    session_id = str(uuid.uuid4())
+    rooms[session_id] = pc
+
+    @pc.on("track")
+    async def on_track(track: MediaStreamTrack):
+        if track.kind == "audio":
+            relay_track = relay.subscribe(track)
+            rooms[f"relay_{room_id}_audio"] = relay_track
+        elif track.kind == "video":
+            relay_track = relay.subscribe(track)
+            rooms[f"relay_{room_id}_video"] = relay_track
+
+    @pc.on("connectionstatechange")
+    async def on_state_change():
+        if pc.connectionState in ("failed", "closed"):
+            rooms.pop(session_id, None)
+
+    await pc.setRemoteDescription(
+        RTCSessionDescription(sdp=sdp_offer, type="offer")
+    )
+    answer = await pc.createAnswer()
+    await pc.setLocalDescription(answer)
+
+    return web.Response(
+        status=201,
+        content_type="application/sdp",
+        headers={"Location": f"/whip/{room_id}/{session_id}"},
+        text=pc.localDescription.sdp,
+    )
+
+async def whep_handler(request: web.Request) -> web.Response:
+    room_id = request.match_info["room_id"]
+    sdp_offer = await request.text()
+
+    pc = RTCPeerConnection()
+
+    audio_track = rooms.get(f"relay_{room_id}_audio")
+    video_track = rooms.get(f"relay_{room_id}_video")
+    if audio_track:
+        pc.addTrack(audio_track)
+    if video_track:
+        pc.addTrack(video_track)
+
+    await pc.setRemoteDescription(
+        RTCSessionDescription(sdp=sdp_offer, type="offer")
+    )
+    answer = await pc.createAnswer()
+    await pc.setLocalDescription(answer)
+
+    return web.Response(
+        status=201,
+        content_type="application/sdp",
+        text=pc.localDescription.sdp,
+    )
+
+async def whip_delete_handler(request: web.Request) -> web.Response:
+    session_id = request.match_info["session_id"]
+    pc = rooms.pop(session_id, None)
+    if pc:
+        await pc.close()
+    return web.Response(status=200)
+
+app = web.Application()
+app.router.add_post("/whip/{room_id}", whip_handler)
+app.router.add_delete("/whip/{room_id}/{session_id}", whip_delete_handler)
+app.router.add_post("/whep/{room_id}", whep_handler)
+
+if __name__ == "__main__":
+    web.run_app(app, port=8080)
+```
+
+### 7.4 WHIP/WHEP vs 自定义 WebSocket 信令对比
+
+| 维度 | 自定义 WebSocket 信令 | WHIP/WHEP |
+|---|---|---|
+| 信令协议 | 自定义 JSON 消息 | 标准 HTTP POST（SDP body） |
+| ICE 候选交换 | 需额外实现 Trickle ICE 消息 | SDP 中含完整 ICE（Gathering 后一次 POST） |
+| 负载均衡 | 需 WebSocket 粘性会话 | 无状态 HTTP，任意负载均衡 |
+| CDN 集成 | 复杂 | 原生兼容（Cloudflare Stream、LiveKit 等） |
+| 认证 | 自定义 | 标准 HTTP Authorization 头 |
+| 调试工具 | 需专用 WS 调试器 | curl 即可测试 |
+| 适用场景 | 需要实时双向控制信令 | 单向/广播流媒体（Tri-Transformer 生成输出流） |

@@ -196,3 +196,179 @@ probs = torch.sigmoid(logits_per_image)
 
 ### 6.3 NaViT（Native Resolution ViT，Google）
 - 扩展 SigLIP 至任意分辨率和纵横比输入，通过 Packing 技术将不同分辨率图像混合训练，是 Qwen2-VL 动态分辨率的技术前身。
+
+---
+
+## 7. 深度扩展（2024-2025 工程实践）
+
+### 7.1 SigLIP 2 完整使用示例（Google, 2024）
+
+SigLIP 2（arXiv:2502.14786）在 SigLIP 基础上引入了多分辨率训练、多语言支持和更大模型规模：
+
+```python
+from transformers import AutoProcessor, AutoModel
+import torch
+
+model = AutoModel.from_pretrained(
+    "google/siglip2-so400m-patch14-384",
+    torch_dtype=torch.bfloat16,
+    device_map="auto"
+)
+processor = AutoProcessor.from_pretrained("google/siglip2-so400m-patch14-384")
+
+from PIL import Image
+image = Image.open("photo.jpg")
+texts = ["a photo of a cat", "a photo of a dog", "a photo of a car"]
+
+inputs = processor(images=image, text=texts, return_tensors="pt", padding=True)
+inputs = {k: v.to(model.device, dtype=torch.bfloat16 if v.dtype == torch.float32 else v.dtype)
+          for k, v in inputs.items()}
+
+with torch.no_grad():
+    outputs = model(**inputs)
+    logits = outputs.logits_per_image
+    probs = torch.sigmoid(logits)
+
+print(f"相似度分数: {probs}")
+```
+
+**SigLIP vs SigLIP 2 性能对比**：
+
+| 模型 | 分辨率 | 参数量 | MMVP-VQA | Zero-shot ImageNet |
+|------|--------|--------|-----------|---------------------|
+| SigLIP-So400m | 384×384 | 400M | 47.3% | 83.2% |
+| SigLIP 2-So400m | 384×384 | 400M | 54.7% | 85.1% |
+| SigLIP 2-So400m | 512×512 | 400M | 57.2% | 86.3% |
+
+### 7.2 InternVL3 完整推理实践（2025）
+
+InternVL3（上海 AI Lab，2025）是基于 SigLIP 视觉编码器的最新多模态大模型，在多项基准上超越 GPT-4o：
+
+```python
+from transformers import AutoTokenizer, AutoModel
+import torch
+from PIL import Image
+
+model = AutoModel.from_pretrained(
+    "OpenGVLab/InternVL3-8B",
+    torch_dtype=torch.bfloat16,
+    low_cpu_mem_usage=True,
+    use_flash_attn=True,
+    trust_remote_code=True,
+    device_map="auto"
+)
+tokenizer = AutoTokenizer.from_pretrained(
+    "OpenGVLab/InternVL3-8B", trust_remote_code=True
+)
+
+def load_image(path, max_num=12):
+    from torchvision import transforms
+    image = Image.open(path).convert("RGB")
+    transform = transforms.Compose([
+        transforms.Resize((448, 448)),
+        transforms.ToTensor(),
+        transforms.Normalize(mean=[0.485, 0.456, 0.406],
+                             std=[0.229, 0.224, 0.225]),
+    ])
+    pixel_values = transform(image).unsqueeze(0).to(torch.bfloat16)
+    return pixel_values
+
+pixel_values = load_image("photo.jpg").to(model.device)
+generation_config = {"max_new_tokens": 512, "do_sample": False}
+
+question = "<image>\n请详细描述这张图片的内容。"
+response = model.chat(tokenizer, pixel_values, question, generation_config)
+print(response)
+```
+
+### 7.3 Qwen2-VL 动态分辨率 Token 化（阿里, 2024）
+
+Qwen2-VL（arXiv:2409.12191）引入了**Naive Dynamic Resolution**机制，支持任意分辨率图像输入，Token 数与图像复杂度自适应匹配：
+
+```python
+from transformers import Qwen2VLForConditionalGeneration, AutoProcessor
+from qwen_vl_utils import process_vision_info
+import torch
+
+model = Qwen2VLForConditionalGeneration.from_pretrained(
+    "Qwen/Qwen2-VL-7B-Instruct",
+    torch_dtype=torch.bfloat16,
+    device_map="auto",
+)
+processor = AutoProcessor.from_pretrained(
+    "Qwen/Qwen2-VL-7B-Instruct",
+    min_pixels=256*28*28,
+    max_pixels=1280*28*28,
+)
+
+messages = [
+    {
+        "role": "user",
+        "content": [
+            {"type": "image", "image": "photo.jpg"},
+            {"type": "text", "text": "这张图片包含什么信息？"},
+        ],
+    }
+]
+
+text = processor.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
+image_inputs, video_inputs = process_vision_info(messages)
+inputs = processor(
+    text=[text],
+    images=image_inputs,
+    videos=video_inputs,
+    return_tensors="pt",
+).to(model.device)
+
+with torch.no_grad():
+    output_ids = model.generate(**inputs, max_new_tokens=512)
+
+output_text = processor.batch_decode(
+    output_ids[:, inputs.input_ids.shape[1]:], skip_special_tokens=True
+)
+print(output_text[0])
+```
+
+**Qwen2-VL 视觉 Token 数量机制**：
+
+```
+输入图像尺寸 → 动态计算 Token 数
+  256×256 → ~64 视觉 Token（小图低分辨率）
+  512×512 → ~256 视觉 Token
+  1024×1024 → ~1024 视觉 Token
+  最大限制: max_pixels=1280*28*28 ≈ 1003520 像素
+```
+
+### 7.4 Tri-Transformer 中的 SigLIP 集成方案
+
+```python
+class TriTransformerVisionEncoder(torch.nn.Module):
+    """
+    基于 SigLIP 的 I-Transformer 视觉输入编码器
+    支持任意分辨率输入，兼容 Qwen2-VL 的 Naive Dynamic Resolution
+    """
+    def __init__(self, model_name="google/siglip2-so400m-patch14-384",
+                 d_model=1024, target_tokens=256):
+        super().__init__()
+        from transformers import SiglipVisionModel
+        self.vision_model = SiglipVisionModel.from_pretrained(model_name)
+        siglip_dim = self.vision_model.config.hidden_size
+        self.proj = torch.nn.Linear(siglip_dim, d_model)
+        self.target_tokens = target_tokens
+        self.pool = torch.nn.AdaptiveAvgPool1d(target_tokens) if target_tokens else None
+
+    def forward(self, pixel_values: torch.Tensor) -> torch.Tensor:
+        """
+        pixel_values: [B, 3, H, W]
+        返回: visual_tokens [B, target_tokens, d_model]
+        """
+        outputs = self.vision_model(pixel_values=pixel_values)
+        patch_features = outputs.last_hidden_state
+
+        if self.pool is not None:
+            patch_features = self.pool(
+                patch_features.transpose(1, 2)
+            ).transpose(1, 2)
+
+        return self.proj(patch_features)
+```

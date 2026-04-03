@@ -192,4 +192,220 @@ class AnyToAnyModel(nn.Module):
 
 ### 5.4 与 Tri-Transformer 的关联
 - Tri-Transformer 的 Token 空间设计与 AnyGPT 高度一致：BPE 文本 + EnCodec/SNAC 音频 + VQ-GAN/SigLIP 视觉，通过模态标识符 Embedding（Modality Embedding）区分。
-- I-Transformer 与 O-Transformer 的"可插拔大模型"可直接复用 AnyGPT 或 Emu3 的多模态 Tokenizer 生态。
+- I-Transformer 与 O-Transformer 的\"可插拔大模型\"可直接复用 AnyGPT 或 Emu3 的多模态 Tokenizer 生态。
+
+---
+
+## 6. 深度扩展（2024-2025 工程实践）
+
+### 6.1 Emu3 完整架构与推理实践（智源, 2024）
+
+Emu3（arXiv:2409.18869）彻底去除独立视觉编码器，直接在统一离散 Token 空间上自回归训练，实现了真正意义上的"Next Token Prediction 统一多模态"：
+
+```python
+from transformers import AutoTokenizer, AutoModel
+from PIL import Image
+import torch
+
+tokenizer = AutoTokenizer.from_pretrained(
+    "BAAI/Emu3-Gen", trust_remote_code=True
+)
+model = AutoModel.from_pretrained(
+    "BAAI/Emu3-Gen",
+    device_map="cuda",
+    torch_dtype=torch.bfloat16,
+    trust_remote_code=True,
+    attn_implementation="flash_attention_2",
+)
+
+GENERATION_PROMPT = (
+    "<|image start|><|image placeholder|><|image end|>"
+    "\n请详细描述这张图片："
+)
+inputs = tokenizer(
+    GENERATION_PROMPT,
+    return_tensors="pt",
+    add_special_tokens=True,
+).to(model.device)
+
+with torch.no_grad():
+    output = model.generate(
+        **inputs,
+        max_new_tokens=512,
+        do_sample=False,
+        temperature=1.0,
+        suppress_tokens=tokenizer.encode("<|image start|>"),
+    )
+
+print(tokenizer.decode(output[0], skip_special_tokens=True))
+```
+
+**Emu3 统一 Token 空间设计**：
+
+```
+Emu3 词表设计：
+  文本 Token:    0 ~ 32000    (LLaMA-3 BPE)
+  视觉 Token:    32001 ~ 64000 (VQ-VAE codebook, 32K条目)
+  特殊 Token:    64001+        (<|image start|>, <|image end|>, ...)
+  总词表大小:    ~64K
+```
+
+```python
+class Emu3TokenSpace:
+    """Emu3 统一 Token 空间管理"""
+    TEXT_VOCAB_SIZE = 32000
+    VISUAL_VOCAB_SIZE = 32000
+    TOTAL_VOCAB_SIZE = TEXT_VOCAB_SIZE + VISUAL_VOCAB_SIZE + 100
+
+    IMAGE_START = TEXT_VOCAB_SIZE + VISUAL_VOCAB_SIZE
+    IMAGE_END = IMAGE_START + 1
+    IMAGE_NEWLINE = IMAGE_START + 2
+
+    @staticmethod
+    def visual_token_to_id(code: int) -> int:
+        return Emu3TokenSpace.TEXT_VOCAB_SIZE + code
+
+    @staticmethod
+    def id_to_visual_token(token_id: int) -> int:
+        return token_id - Emu3TokenSpace.TEXT_VOCAB_SIZE
+```
+
+### 6.2 Janus-Pro：解耦理解与生成的 Any-to-Any（DeepSeek, 2025）
+
+Janus-Pro（arXiv:2501.17811）的核心创新是**解耦视觉理解和视觉生成的编码路径**，解决了统一多模态模型在理解精度和生成质量上的固有权衡：
+
+```
+传统 Any-to-Any（AnyGPT / Emu3）：
+  图像输入 → [同一 VQ 编码器] → 离散视觉 Token → LLM → 理解/生成
+
+Janus-Pro 解耦方案：
+  图像输入（理解任务）→ [SigLIP 连续编码器] → 连续特征 → LLM → 文本输出
+  图像输出（生成任务）→ [VQ 离散解码器] → 离散 Token 序列 → LLM → VQ 解码 → 图像
+```
+
+```python
+class JanusPro(torch.nn.Module):
+    """Janus-Pro 解耦多模态架构骨架"""
+    def __init__(self, llm_backbone, vision_encoder, vq_decoder):
+        super().__init__()
+        self.llm = llm_backbone
+        self.vision_enc = vision_encoder
+        self.vq_dec = vq_decoder
+        self.understanding_proj = torch.nn.Linear(
+            vision_encoder.config.hidden_size,
+            llm_backbone.config.hidden_size
+        )
+        self.generation_head = torch.nn.Linear(
+            llm_backbone.config.hidden_size,
+            vq_decoder.codebook_size
+        )
+
+    def forward_understanding(self, pixel_values, text_ids):
+        vis_features = self.vision_enc(pixel_values).last_hidden_state
+        vis_tokens = self.understanding_proj(vis_features)
+        text_emb = self.llm.model.embed_tokens(text_ids)
+        combined = torch.cat([vis_tokens, text_emb], dim=1)
+        return self.llm(inputs_embeds=combined)
+
+    def forward_generation(self, text_ids, visual_token_ids=None):
+        if visual_token_ids is not None:
+            gen_emb = self.llm.model.embed_tokens(
+                visual_token_ids + self.llm.config.vocab_size
+            )
+            text_emb = self.llm.model.embed_tokens(text_ids)
+            inputs_embeds = torch.cat([text_emb, gen_emb], dim=1)
+        else:
+            inputs_embeds = self.llm.model.embed_tokens(text_ids)
+        logits = self.llm(inputs_embeds=inputs_embeds).logits
+        visual_logits = self.generation_head(logits)
+        return visual_logits
+```
+
+**Janus-Pro 在 GenAI 基准上的性能**：
+
+| 模型 | GenEval ↑ | DPG-Bench ↑ | MMStar ↑ | 参数量 |
+|------|-----------|-------------|---------|--------|
+| Janus-1.3B | 0.769 | 71.2 | 55.3 | 1.3B |
+| Janus-Pro-7B | 0.848 | 80.0 | 59.8 | 7B |
+| DALL-E 3 | 0.813 | 83.5 | — | — |
+| SD 3.5 | 0.768 | 83.0 | — | — |
+
+### 6.3 Show-o：自回归与扩散的混合统一（2024）
+
+Show-o（arXiv:2408.12528）在同一 Transformer 中实现自回归（文本）+ 掩码扩散（图像）的双模态生成：
+
+```python
+class ShowoUnifiedTransformer(torch.nn.Module):
+    """Show-o 混合生成模式 Transformer"""
+    def __init__(self, d_model=2048, vocab_size=58498):
+        super().__init__()
+        from transformers import PhiForCausalLM, PhiConfig
+        config = PhiConfig(
+            vocab_size=vocab_size,
+            hidden_size=d_model,
+            num_hidden_layers=24,
+            num_attention_heads=32,
+        )
+        self.transformer = PhiForCausalLM(config)
+        self.MASK_TOKEN_ID = vocab_size - 1
+
+    def forward_text(self, input_ids):
+        return self.transformer(input_ids=input_ids)
+
+    def forward_image_masked_diffusion(
+        self, noisy_tokens, noise_level: float
+    ):
+        mask_ratio = noise_level
+        mask = torch.rand_like(noisy_tokens.float()) < mask_ratio
+        noisy_tokens = noisy_tokens.masked_fill(mask, self.MASK_TOKEN_ID)
+        logits = self.transformer(input_ids=noisy_tokens).logits
+        return logits, mask
+
+    def denoise_step(self, tokens, t: int, T: int = 1000):
+        noise_level = 1.0 - t / T
+        logits, mask = self.forward_image_masked_diffusion(tokens, noise_level)
+        predicted = logits.argmax(-1)
+        tokens = torch.where(mask, predicted, tokens)
+        return tokens
+```
+
+### 6.4 Tri-Transformer Any-to-Any Token 统一空间设计
+
+基于以上三种架构的学习，Tri-Transformer 的最优 Any-to-Any Token 空间设计方案：
+
+```python
+class TriTransformerUnifiedTokenSpace:
+    """
+    Tri-Transformer 统一 Token 空间
+    借鉴 AnyGPT 的数据层统一 + Janus-Pro 的解耦编码思想
+    """
+    TEXT_VOCAB_SIZE = 152064
+    AUDIO_VOCAB_OFFSET = 152064
+    AUDIO_VOCAB_SIZE = 4096
+    VISUAL_VOCAB_OFFSET = 156160
+    VISUAL_VOCAB_SIZE = 32768
+    CONTROL_VOCAB_OFFSET = 188928
+    CONTROL_VOCAB_SIZE = 256
+    TOTAL_VOCAB_SIZE = 189184
+
+    SPECIAL_TOKENS = {
+        "<|text_start|>": CONTROL_VOCAB_OFFSET + 0,
+        "<|text_end|>": CONTROL_VOCAB_OFFSET + 1,
+        "<|audio_start|>": CONTROL_VOCAB_OFFSET + 2,
+        "<|audio_end|>": CONTROL_VOCAB_OFFSET + 3,
+        "<|visual_start|>": CONTROL_VOCAB_OFFSET + 4,
+        "<|visual_end|>": CONTROL_VOCAB_OFFSET + 5,
+        "<|interrupt|>": CONTROL_VOCAB_OFFSET + 6,
+    }
+
+    @classmethod
+    def text_to_id(cls, token_id: int) -> int:
+        return token_id
+
+    @classmethod
+    def audio_to_id(cls, codec_id: int) -> int:
+        return cls.AUDIO_VOCAB_OFFSET + codec_id
+
+    @classmethod
+    def visual_to_id(cls, vq_id: int) -> int:
+        return cls.VISUAL_VOCAB_OFFSET + vq_id

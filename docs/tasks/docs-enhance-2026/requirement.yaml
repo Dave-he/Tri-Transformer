@@ -1,0 +1,37 @@
+task_id: docs-enhance-2026
+title: Tri-Transformer 技术文档深度增强（2026版）
+type: documentation
+platform: Backend
+mode: standard
+created_at: 2026-04-03
+
+description: |
+  对 docs/tech_details/ 下多篇子技术文档进行深度增强，重点补充 2024-2025 年最新学术与工程进展，
+  包括：VQ-GAN/COSMOS Tokenizer、SigLIP-2/InternVL3/Qwen2-VL、AnyGPT/Emu3/Janus-Pro、
+  Milvus 2.5 稀疏向量与 GPU 索引、LlamaIndex Workflows/Agents、WebRTC WHIP/WHEP、
+  以及 ModernBERT/NomicBERT 和 MegaByte/MEGALODON 等前沿研究。
+  每篇文档末尾新增"最新进展（2024-2025）"章节或扩充现有章节，附可运行代码示例。
+
+scope:
+  primary_targets:
+    - docs/tech_details/09_vqgan.md          # COSMOS Tokenizer + LlamaGen + OpenMAGVIT2
+    - docs/tech_details/10_siglip.md         # SigLIP 2 + InternVL3 + Qwen2-VL 实践
+    - docs/tech_details/12_anygpt_any2any.md  # Emu3 + Janus-Pro + Show-o
+    - docs/tech_details/15_milvus.md         # Milvus 2.5 稀疏向量 + GPU IVF + 实践
+    - docs/tech_details/16_llamaindex.md     # Workflows + multi-agent + LlamaParse
+    - docs/tech_details/21_webrtc.md         # WHIP/WHEP + aiortc 完整实践
+  secondary_targets:
+    - docs/tech_details/03_bidirectional_encoder.md  # ModernBERT 深化 + NomicBERT + GTE
+    - docs/tech_details/02_chunking_pooling.md        # MegaByte + MEGALODON + 超长上下文
+
+acceptance_criteria:
+  - ac_1: 每篇 primary_target 文档新增不少于 50 行内容（含代码示例）
+  - ac_2: 每篇 secondary_target 文档新增不少于 30 行内容
+  - ac_3: 所有新增内容均提供可运行 PyTorch/Python 代码示例
+  - ac_4: 引用具体论文（arXiv 编号或会议名称）或官方文档链接
+  - ac_5: 新增内容与 Tri-Transformer 项目的关联说明清晰
+
+constraints:
+  - 追加内容在现有章节末尾或以新小节形式插入，不修改现有结构
+  - 代码示例与项目技术栈（PyTorch、FastAPI、React）兼容
+  - 不引入虚构或不可验证的技术细节

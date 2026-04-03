@@ -180,3 +180,146 @@ class ITransformerChunkLayer(nn.Module):
 ### 5.4 在多模态流中的应用
 - Moshi：每 12.5ms 音频帧（对应 1 个语义 Token）处理一次，等效于 chunk_size=1 的极细粒度流式处理。
 - Tri-Transformer 目标：chunk_size=100ms 为宏块语义边界，在延迟与语义质量间取得平衡。
+
+---
+
+## 6. MegaByte 与 MEGALODON 深度解析
+
+### 6.1 MegaByte：分层多尺度 Token 化
+
+MegaByte（Yu et al., Meta 2023，arXiv:2305.07185）是多尺度 Chunking 的极致实现，核心思想是将序列分为 Patch（宏块），用两个模型分别建模不同粒度：
+
+```
+原始字节序列（Byte-level）：
+  [b1 b2 b3 b4 | b5 b6 b7 b8 | b9 b10 b11 b12]
+       Patch 0        Patch 1        Patch 2
+
+全局模型（Global Model，大模型）：
+  输入: [patch_emb_0, patch_emb_1, ...]  (序列长度 = 总长 / patch_size)
+  功能: 跨 Patch 的长程依赖建模
+
+局部模型（Local Model，小模型）：
+  输入: 单个 Patch 的字节序列
+  功能: Patch 内精细生成（自回归）
+```
+
+**与 Tri-Transformer Chunking 的对照**：
+
+| 维度 | MegaByte | Tri-Transformer Chunking |
+|---|---|---|
+| 粒度单位 | 原始字节 Patch | 语义 Token 宏块（100ms 音频帧） |
+| 全局建模 | 大型 Global Transformer | Bidirectional Encoder（I-Transformer 第二阶） |
+| 局部建模 | 小型 Local Transformer | Causal Streaming Decoder（I-Transformer 第一阶） |
+| 主要收益 | 直接处理字节，消除 BPE tokenizer | 流式处理与全局理解解耦，降低延迟 |
+
+```python
+class MegaByteInspiredChunker(nn.Module):
+    """受 MegaByte 启发的分层 Chunk 处理器"""
+
+    def __init__(self, d_model: int, patch_size: int, n_global_layers: int):
+        super().__init__()
+        self.patch_size = patch_size
+        self.local_encoder = nn.TransformerEncoder(
+            nn.TransformerEncoderLayer(d_model, nhead=8, batch_first=True),
+            num_layers=2,
+        )
+        self.patch_proj = nn.Linear(d_model * patch_size, d_model)
+        self.global_encoder = nn.TransformerEncoder(
+            nn.TransformerEncoderLayer(d_model, nhead=8, batch_first=True),
+            num_layers=n_global_layers,
+        )
+
+    def forward(self, token_stream: torch.Tensor) -> torch.Tensor:
+        B, T, D = token_stream.shape
+        assert T % self.patch_size == 0, "T 必须是 patch_size 的整数倍"
+
+        local_out = self.local_encoder(token_stream)
+
+        patches = local_out.view(B, T // self.patch_size, self.patch_size * D)
+        patch_emb = self.patch_proj(patches)
+
+        global_out = self.global_encoder(patch_emb)
+        return global_out
+```
+
+### 6.2 MEGALODON：线性复杂度长上下文架构
+
+MEGALODON（Ma et al., Meta 2024，arXiv:2404.08801）在 Mega（指数移动平均注意力）基础上进一步扩展，实现 $O(n)$ 复杂度的无限长上下文处理：
+
+**核心组件**：
+
+| 组件 | 作用 |
+|---|---|
+| CEMA（Chunk EMA） | 指数移动平均，在每个 Chunk 内并行计算，跨 Chunk 串行传递隐状态 |
+| TimestepNorm | 时间步维度的归一化，替代传统 LayerNorm，适应流式场景 |
+| GatedCrossAttention | 以 Chunk EMA 输出为 Key/Value，Query 来自当前 Token，降低注意力代价 |
+| 多头门控注意力（MHGA） | 将 EMA 的全局偏置与局部 Token 注意力融合 |
+
+**MEGALODON 与 Chunking 的关系**：MEGALODON 的 CEMA 机制本质上是可学习的 Chunking + EMA 池化，将每 Chunk 的信息压缩为固定大小的隐状态向量，是 Tri-Transformer `AttentionPooling` 的线性替代方案：
+
+```python
+class ChunkEMAPooling(nn.Module):
+    """
+    MEGALODON CEMA 启发的指数移动平均 Chunk 池化
+    以固定大小隐状态替代注意力池化，O(1) 内存开销
+    """
+
+    def __init__(self, d_model: int, alpha_init: float = 0.9):
+        super().__init__()
+        self.d_model = d_model
+        self.log_alpha = nn.Parameter(
+            torch.full((d_model,), torch.log(torch.tensor(alpha_init)))
+        )
+        self.beta = nn.Parameter(torch.ones(d_model))
+        self.gamma = nn.Parameter(torch.randn(d_model) * 0.02)
+
+    def forward(self, chunk: torch.Tensor) -> torch.Tensor:
+        """
+        chunk: [batch, chunk_size, d_model]
+        return: [batch, d_model]  (Chunk 的 EMA 隐状态)
+        """
+        alpha = torch.sigmoid(self.log_alpha)
+        B, T, D = chunk.shape
+        h = torch.zeros(B, D, device=chunk.device, dtype=chunk.dtype)
+        for t in range(T):
+            x_t = chunk[:, t, :]
+            h = alpha * h + (1 - alpha) * (self.beta * x_t)
+        return h * self.gamma
+
+class MEGALODONInspiredEncoder(nn.Module):
+    """Chunk EMA + Gated Attention 混合编码器"""
+
+    def __init__(self, d_model: int, chunk_size: int, n_heads: int = 8):
+        super().__init__()
+        self.chunk_size = chunk_size
+        self.ema_pool = ChunkEMAPooling(d_model)
+        self.gate_proj = nn.Linear(d_model * 2, d_model)
+        self.cross_attn = nn.MultiheadAttention(d_model, n_heads, batch_first=True)
+        self.norm = nn.RMSNorm(d_model)
+
+    def forward(self, token_stream: torch.Tensor) -> torch.Tensor:
+        B, T, D = token_stream.shape
+        n_chunks = T // self.chunk_size
+        chunk_states = []
+
+        for i in range(n_chunks):
+            chunk = token_stream[:, i * self.chunk_size:(i + 1) * self.chunk_size, :]
+            ema_state = self.ema_pool(chunk).unsqueeze(1)
+            chunk_states.append(ema_state)
+
+        ema_seq = torch.cat(chunk_states, dim=1)
+        attn_out, _ = self.cross_attn(ema_seq, ema_seq, ema_seq)
+        gate = torch.sigmoid(self.gate_proj(
+            torch.cat([ema_seq, attn_out], dim=-1)
+        ))
+        return self.norm(gate * attn_out + (1 - gate) * ema_seq)
+```
+
+### 6.3 三种流式 Chunk 方案性能对比
+
+| 方案 | 时间复杂度 | 空间复杂度 | 全局建模能力 | 延迟 | 适用场景 |
+|---|---|---|---|---|---|
+| **AttentionPooling**（本项目） | $O(C^2)$ per chunk | $O(C)$ | 高（Chunk 内双向注意力） | 低 | Tri-Transformer 推荐 |
+| **MegaByte** 分层 | $O(C \log C)$ | $O(C)$ | 高（全局模型建模） | 中 | 字节级别长文档 |
+| **ChunkEMA（MEGALODON）** | $O(C)$ | $O(1)$ | 中（EMA 记忆衰减） | 极低 | 超低延迟流式场景 |
+| **StreamingLLM** 滑窗 | $O(W)$（W=窗口） | $O(W)$ | 低（无全局状态） | 极低 | 极简无改动部署 |

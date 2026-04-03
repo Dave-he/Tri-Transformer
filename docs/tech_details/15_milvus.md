@@ -227,3 +227,160 @@ class TriTransformerRAGConnector:
 | Weaviate | 开源+SaaS | 多模态原生支持 | 社区活跃度中 |
 | Chroma | 开源嵌入式 | 极易上手 | 不适合生产大规模 |
 | Pinecone | 闭源SaaS | 免运维 | 成本高、数据出境 |
+
+---
+
+## 6. Milvus 2.5 新特性：稀疏向量与混合检索
+
+### 6.1 稀疏向量（Sparse Vector）原生支持
+
+Milvus 2.5（2024.12）引入原生稀疏向量字段，支持 BM25 等词袋稀疏表示与稠密向量并存于同一 Collection，无需外置 Elasticsearch：
+
+```python
+from pymilvus import (
+    connections, Collection, CollectionSchema,
+    FieldSchema, DataType, utility
+)
+
+connections.connect(host="localhost", port="19530")
+
+fields = [
+    FieldSchema(name="id", dtype=DataType.INT64, is_primary=True, auto_id=True),
+    FieldSchema(name="content", dtype=DataType.VARCHAR, max_length=4096),
+    FieldSchema(name="dense_vec", dtype=DataType.FLOAT_VECTOR, dim=1024),
+    FieldSchema(name="sparse_vec", dtype=DataType.SPARSE_FLOAT_VECTOR),
+]
+
+schema = CollectionSchema(fields, description="混合检索知识库")
+collection = Collection("hybrid_kb", schema)
+
+dense_index = {
+    "metric_type": "COSINE",
+    "index_type": "HNSW",
+    "params": {"M": 16, "efConstruction": 200},
+}
+collection.create_index("dense_vec", dense_index)
+
+sparse_index = {
+    "metric_type": "IP",
+    "index_type": "SPARSE_INVERTED_INDEX",
+    "params": {"drop_ratio_build": 0.2},
+}
+collection.create_index("sparse_vec", sparse_index)
+collection.load()
+```
+
+### 6.2 BM25 稀疏向量构建
+
+使用 `pymilvus` 内置 BM25 函数或手动构建稀疏向量：
+
+```python
+from pymilvus.model.sparse import BM25EmbeddingFunction
+from pymilvus.model.sparse.bm25.tokenizers import build_default_analyzer
+
+analyzer = build_default_analyzer(language="zh")
+bm25_ef = BM25EmbeddingFunction(analyzer)
+
+corpus = [
+    "Tri-Transformer 采用三分支架构检测 AI 幻觉",
+    "Milvus 向量数据库支持十亿级 ANN 检索",
+    "WebRTC 实现低延迟全双工音视频通信",
+]
+bm25_ef.fit(corpus)
+
+sparse_embeddings = bm25_ef.encode_documents(corpus)
+
+for i, (doc, sparse_emb) in enumerate(zip(corpus, sparse_embeddings)):
+    dense_emb = dense_encoder.encode(doc).tolist()
+    collection.insert([{
+        "content": doc,
+        "dense_vec": dense_emb,
+        "sparse_vec": sparse_emb,
+    }])
+```
+
+### 6.3 混合检索（Hybrid Search）
+
+Milvus 2.5 原生支持单次请求同时执行稠密+稀疏检索，并通过 RRF（Reciprocal Rank Fusion）或 WeightedRanker 融合排序：
+
+```python
+from pymilvus import AnnSearchRequest, WeightedRanker, RRFRanker
+
+def hybrid_search(
+    collection: Collection,
+    query_text: str,
+    dense_encoder,
+    bm25_ef,
+    top_k: int = 5,
+    dense_weight: float = 0.7,
+    sparse_weight: float = 0.3,
+) -> list:
+    dense_query = dense_encoder.encode(query_text).tolist()
+    sparse_query = bm25_ef.encode_queries([query_text])[0]
+
+    dense_req = AnnSearchRequest(
+        data=[dense_query],
+        anns_field="dense_vec",
+        param={"metric_type": "COSINE", "params": {"ef": 100}},
+        limit=top_k * 2,
+    )
+    sparse_req = AnnSearchRequest(
+        data=[sparse_query],
+        anns_field="sparse_vec",
+        param={"metric_type": "IP", "params": {"drop_ratio_search": 0.2}},
+        limit=top_k * 2,
+    )
+
+    ranker = WeightedRanker(dense_weight, sparse_weight)
+
+    results = collection.hybrid_search(
+        reqs=[dense_req, sparse_req],
+        rerank=ranker,
+        limit=top_k,
+        output_fields=["content"],
+    )
+
+    return [
+        {"content": hit.entity.get("content"), "score": hit.score}
+        for hit in results[0]
+    ]
+```
+
+### 6.4 与 Tri-Transformer RAG 的集成
+
+混合检索显著提升精确关键词命中率，适合技术文档场景（函数名、型号等精确词汇）：
+
+```python
+class HybridRAGConnector:
+    def __init__(self, collection, dense_encoder, bm25_ef):
+        self.collection = collection
+        self.dense_encoder = dense_encoder
+        self.bm25_ef = bm25_ef
+
+    def retrieve(self, query: str, top_k: int = 5) -> list[dict]:
+        return hybrid_search(
+            self.collection,
+            query,
+            self.dense_encoder,
+            self.bm25_ef,
+            top_k=top_k,
+        )
+
+    def retrieve_for_planning(
+        self, planning_query_tensor: "torch.Tensor", raw_query: str
+    ) -> "torch.Tensor":
+        import torch
+        chunks = self.retrieve(raw_query, top_k=5)
+        texts = [c["content"] for c in chunks]
+        vecs = self.dense_encoder.encode(texts)
+        return torch.tensor(vecs, dtype=torch.float32).unsqueeze(0)
+```
+
+### 6.5 Milvus 2.5 其他重要更新
+
+| 特性 | 说明 |
+|---|---|
+| **JSON 字段索引** | 对 JSON 字段中的嵌套 key 直接建立标量索引，过滤性能提升 10× |
+| **Clustering Compaction** | 按标量字段聚类压缩，减少扫描范围，降低查询延迟 |
+| **流式写入（Streaming Node）** | 独立 Streaming Node 保证写入后毫秒级可见 |
+| **MMap 冷热分层** | 冷数据自动 MMap 到磁盘，热数据保留内存，降低内存成本 50%+ |

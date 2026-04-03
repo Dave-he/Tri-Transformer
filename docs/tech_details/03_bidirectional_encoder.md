@@ -177,3 +177,130 @@ class ITransformerEncoder(nn.Module):
 
 ### 5.3 Encoder-Decoder 混合架构的复兴
 - **T5、FLAN-T5、UL2**：编码器-解码器架构在多任务学习中展现出优于纯 Decoder 的泛化能力，为 Tri-Transformer 的 Encoder-Decoder 混合设计提供了大量最佳实践。
+
+---
+
+## 6. ModernBERT 深度解析与实践
+
+### 6.1 ModernBERT 核心改进（2024.12）
+
+ModernBERT（Warner et al., 2024，arXiv:2412.13663）对原版 BERT 进行了全面现代化改造：
+
+| 维度 | 原版 BERT | ModernBERT |
+|---|---|---|
+| 位置编码 | 绝对位置嵌入 | RoPE（与 LLaMA/Qwen 一致） |
+| 注意力实现 | 标准 MultiHead | FlashAttention-2（内存效率 4×） |
+| 上下文长度 | 512 Token | 8192 Token（全局注意力） |
+| 注意力模式 | 全局 | 交替全局（每 3 层一次） + 局部滑窗 128 |
+| 归一化位置 | Post-LayerNorm | Pre-LayerNorm |
+| FFN 激活 | GELU | GeGLU |
+| 训练数据 | ~16GB | 2 万亿 Token（代码+多语言） |
+| 推理速度 | 基准 1× | 2-3×（相同参数量） |
+
+**ModernBERT 交替注意力**是关键创新：大多数层使用局部窗口（128 Token），每 3 层使用一次全局注意力，在保持 $O(n)$ 近似复杂度的同时维持全局理解能力。
+
+### 6.2 ModernBERT 加载与使用
+
+```python
+from transformers import AutoTokenizer, AutoModel
+import torch
+
+model_id = "answerdotai/ModernBERT-base"
+tokenizer = AutoTokenizer.from_pretrained(model_id)
+model = AutoModel.from_pretrained(model_id, torch_dtype=torch.bfloat16)
+model.eval()
+
+def encode_with_modernbert(texts: list[str], batch_size: int = 32) -> torch.Tensor:
+    all_embeddings = []
+    for i in range(0, len(texts), batch_size):
+        batch = texts[i : i + batch_size]
+        inputs = tokenizer(
+            batch,
+            padding=True,
+            truncation=True,
+            max_length=8192,
+            return_tensors="pt",
+        )
+        with torch.no_grad():
+            outputs = model(**inputs)
+        embeddings = outputs.last_hidden_state[:, 0]
+        all_embeddings.append(embeddings)
+    return torch.cat(all_embeddings, dim=0)
+
+texts = ["Tri-Transformer 幻觉检测机制", "WebRTC 实时音视频通信"]
+embeddings = encode_with_modernbert(texts)
+print(embeddings.shape)
+```
+
+### 6.3 GTE-Qwen2 实践：长上下文嵌入
+
+GTE-Qwen2（阿里巴巴，2024）基于 Qwen2-7B Decoder 改造为双向 Encoder，支持 32K 上下文，MTEB 排行榜 Top-5：
+
+```python
+from sentence_transformers import SentenceTransformer
+import torch
+
+model = SentenceTransformer(
+    "Alibaba-NLP/gte-Qwen2-7B-instruct",
+    trust_remote_code=True,
+    model_kwargs={"torch_dtype": torch.bfloat16},
+)
+model.max_seq_length = 32768
+
+def encode_long_document(document: str, instruction: str = "") -> list[float]:
+    if instruction:
+        text = f"Instruct: {instruction}\nQuery: {document}"
+    else:
+        text = document
+    embedding = model.encode(text, normalize_embeddings=True)
+    return embedding.tolist()
+
+doc_embedding = encode_long_document(
+    "Tri-Transformer 架构的完整技术报告...",
+    instruction="为检索相关文档，表示以下查询",
+)
+print(f"嵌入维度: {len(doc_embedding)}")
+
+query_embedding = encode_long_document(
+    "幻觉检测的三分支架构如何工作？",
+    instruction="为检索相关文档，表示以下查询",
+)
+
+similarity = torch.cosine_similarity(
+    torch.tensor(doc_embedding).unsqueeze(0),
+    torch.tensor(query_embedding).unsqueeze(0),
+)
+print(f"语义相似度: {similarity.item():.4f}")
+```
+
+### 6.4 在 Tri-Transformer 中替换 I-Transformer Encoder
+
+```python
+from transformers import AutoModel, AutoTokenizer
+import torch.nn as nn
+
+class ModernBERTIEncoder(nn.Module):
+    """使用 ModernBERT 作为 I-Transformer 双向编码骨干"""
+
+    def __init__(self, d_model: int = 1024, freeze_base: bool = False):
+        super().__init__()
+        self.tokenizer = AutoTokenizer.from_pretrained("answerdotai/ModernBERT-large")
+        base = AutoModel.from_pretrained(
+            "answerdotai/ModernBERT-large",
+            torch_dtype=torch.bfloat16,
+        )
+        self.encoder = base
+        self.proj = nn.Linear(1024, d_model)
+        if freeze_base:
+            for p in self.encoder.parameters():
+                p.requires_grad_(False)
+
+    def forward(self, chunk_texts: list[str]) -> torch.Tensor:
+        inputs = self.tokenizer(
+            chunk_texts, padding=True, truncation=True,
+            max_length=512, return_tensors="pt"
+        ).to(next(self.parameters()).device)
+        outputs = self.encoder(**inputs)
+        cls_emb = outputs.last_hidden_state[:, 0]
+        return self.proj(cls_emb)
+```

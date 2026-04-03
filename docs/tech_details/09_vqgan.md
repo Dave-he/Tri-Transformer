@@ -190,3 +190,203 @@ vqvae = VQModel.from_pretrained("openai/dall-e")
 ### 5.5 与 Tri-Transformer 集成建议
 - Phase 3 全模态阶段：推荐使用 COSMOS Tokenizer（开源、高质量、支持视频）。
 - 离散视觉 Token 与音频 Token、文本 Token 共享 `d_model` 嵌入空间，通过模态标识符（Modality Embedding）区分。
+
+---
+
+## 6. 深度扩展（2024-2025 工程实践）
+
+### 6.1 COSMOS Tokenizer 完整使用示例（NVIDIA, 2024）
+
+COSMOS Tokenizer（arXiv:2501.03575）是 NVIDIA 开源的多模态视觉 Tokenizer，支持图像和视频，提供连续（Continuous VAE）和离散（Discrete FSQ）两种变体：
+
+```bash
+pip install cosmos-tokenizer
+```
+
+```python
+import torch
+from cosmos_tokenizer.video_lib import CausalVideoTokenizer
+
+model_name = "Cosmos-Tokenizer-DV4x8x8"
+tokenizer = CausalVideoTokenizer.from_pretrained(f"nvidia/{model_name}")
+
+video = torch.randn(1, 3, 9, 512, 512)
+
+with torch.no_grad():
+    indices, codes = tokenizer.encode(video)
+
+print(f"离散 Token indices: {indices.shape}")
+
+reconstructed = tokenizer.decode(indices)
+print(f"重建视频: {reconstructed.shape}")
+```
+
+**COSMOS Tokenizer 两种变体对比**：
+
+| 变体 | 压缩率 | 输出 | 适用场景 |
+|------|--------|------|---------|
+| `DV4x8x8`（离散视频） | 时间4× 空间8× | 整数 Token（FSQ） | 自回归生成（接 LLM/Transformer） |
+| `CV4x8x8`（连续视频） | 时间4× 空间8× | 连续潜在向量 | 扩散模型生成 |
+| `DI8x8`（离散图像） | 空间8× | 整数 Token | 图像理解 + 自回归生成 |
+
+**Tri-Transformer 集成**：
+
+```python
+class TriTransformerVisualTokenizer(torch.nn.Module):
+    def __init__(self, model_name="Cosmos-Tokenizer-DV4x8x8"):
+        super().__init__()
+        from cosmos_tokenizer.video_lib import CausalVideoTokenizer
+        self.tokenizer = CausalVideoTokenizer.from_pretrained(
+            f"nvidia/{model_name}"
+        )
+        self.VISUAL_VOCAB_OFFSET = 200000
+
+    def encode_to_ids(self, video: torch.Tensor) -> torch.Tensor:
+        with torch.no_grad():
+            indices, _ = self.tokenizer.encode(video)
+        return indices.flatten(1) + self.VISUAL_VOCAB_OFFSET
+
+    def decode_from_ids(self, token_ids: torch.Tensor,
+                        spatial_shape=(8, 8)) -> torch.Tensor:
+        indices = (token_ids - self.VISUAL_VOCAB_OFFSET).reshape(
+            token_ids.shape[0], -1, *spatial_shape
+        )
+        return self.tokenizer.decode(indices)
+```
+
+### 6.2 OpenMAGVIT2：开源最强视频 Tokenizer（2024）
+
+OpenMAGVIT2（arXiv:2409.04410）是对 Google Magvit-2 的开源复现和改进，使用 **Look-Up Free Quantization (LFQ)**：
+
+```python
+class LFQQuantizer(torch.nn.Module):
+    """Look-Up Free Quantization：无需码本查找的离散量化"""
+    def __init__(self, codebook_size: int = 262144, dim: int = 18):
+        super().__init__()
+        assert codebook_size == 2 ** dim, "codebook_size 必须是 2^dim"
+        self.dim = dim
+        self.codebook_size = codebook_size
+        self.scale = torch.nn.Parameter(torch.ones(1))
+
+    def forward(self, z: torch.Tensor):
+        z_scaled = z * self.scale
+        codes = (z_scaled > 0).long()
+        indices = (codes * (2 ** torch.arange(self.dim, device=z.device))).sum(-1)
+
+        z_q = (codes.float() * 2 - 1) * self.scale
+        z_q = z + (z_q - z).detach()
+
+        entropy_loss = -torch.mean(
+            codes.float() * torch.log(torch.sigmoid(z_scaled) + 1e-8) +
+            (1 - codes.float()) * torch.log(1 - torch.sigmoid(z_scaled) + 1e-8)
+        )
+        return z_q, indices, entropy_loss
+```
+
+**LFQ vs 传统 VQ 对比**：
+
+| 指标 | 传统 VQ（EMA） | FSQ | LFQ（OpenMAGVIT2）|
+|------|---------------|-----|-------------------|
+| 码本利用率 | ~30-60%（需 EMA 修复） | ~99% | ~99%（结构保证）|
+| 码本大小 | 8192-16384 | 4096-32768 | 最大 262144 |
+| 训练稳定性 | 中等 | 高 | 高 |
+| 梯度估计 | STE（直通估计） | 无需 | 无需 |
+
+### 6.3 LlamaGen：自回归视觉生成范式验证（2024）
+
+LlamaGen（arXiv:2406.06525）证明了标准 LLM（LLaMA 架构）在高质量 VQ Token 上可达到扩散模型级别的图像质量（FID=2.18 on ImageNet 256×256）：
+
+```python
+from transformers import LlamaForCausalLM, LlamaConfig
+
+config = LlamaConfig(
+    vocab_size=16384 + 3,
+    hidden_size=2048,
+    num_hidden_layers=24,
+    num_attention_heads=16,
+    intermediate_size=5504,
+)
+model = LlamaForCausalLM(config)
+
+BOS_TOKEN = 16384
+EOS_TOKEN = 16385
+PAD_TOKEN = 16386
+
+def generate_image_tokens(
+    model, class_id: int, num_tokens: int = 256, temperature: float = 1.0
+):
+    input_ids = torch.tensor([[BOS_TOKEN, class_id]])
+    output = model.generate(
+        input_ids,
+        max_new_tokens=num_tokens,
+        do_sample=True,
+        temperature=temperature,
+        eos_token_id=EOS_TOKEN,
+    )
+    return output[0, 2:-1]
+
+visual_tokens = generate_image_tokens(model, class_id=985)
+```
+
+**LlamaGen 对 Tri-Transformer 的核心启示**：
+- 视觉 Token + 标准 LLM = 可行的多模态生成范式（无需扩散模型）
+- 码本大小 16384 可在 O-Transformer 词表中分配独立区间
+- 温度参数控制生成多样性，与 C-Transformer 控制信号兼容
+
+### 6.4 Codebook Collapse 防护最佳实践（2024 工程总结）
+
+```python
+class RobustVectorQuantizer(torch.nn.Module):
+    """带 EMA 更新 + 低使用率条目重置的鲁棒 VQ"""
+    def __init__(self, num_embeddings=16384, embedding_dim=256,
+                 decay=0.99, epsilon=1e-5, usage_threshold=1.0):
+        super().__init__()
+        self.num_embeddings = num_embeddings
+        self.embedding_dim = embedding_dim
+        self.decay = decay
+        self.epsilon = epsilon
+        self.usage_threshold = usage_threshold
+
+        embed = torch.randn(num_embeddings, embedding_dim)
+        self.register_buffer("embedding", embed)
+        self.register_buffer("cluster_size", torch.zeros(num_embeddings))
+        self.register_buffer("embed_avg", embed.clone())
+        self.register_buffer("usage_count", torch.zeros(num_embeddings))
+
+    def forward(self, z: torch.Tensor):
+        flat = z.reshape(-1, self.embedding_dim)
+        dist = (flat.pow(2).sum(1, keepdim=True)
+                - 2 * flat @ self.embedding.T
+                + self.embedding.pow(2).sum(1))
+        indices = dist.argmin(1)
+        z_q = self.embedding[indices].reshape(z.shape)
+
+        if self.training:
+            with torch.no_grad():
+                one_hot = torch.zeros(
+                    indices.shape[0], self.num_embeddings, device=z.device
+                ).scatter_(1, indices.unsqueeze(1), 1)
+                self.cluster_size.mul_(self.decay).add_(
+                    one_hot.sum(0) * (1 - self.decay)
+                )
+                embed_sum = one_hot.T @ flat
+                self.embed_avg.mul_(self.decay).add_(
+                    embed_sum * (1 - self.decay)
+                )
+                n = self.cluster_size.sum()
+                cluster_size = (
+                    (self.cluster_size + self.epsilon)
+                    / (n + self.num_embeddings * self.epsilon) * n
+                )
+                self.embedding.copy_(self.embed_avg / cluster_size.unsqueeze(1))
+
+                self.usage_count.add_(one_hot.sum(0))
+                if self.usage_count.min() < self.usage_threshold:
+                    dead_indices = (self.usage_count < self.usage_threshold).nonzero(as_tuple=True)[0]
+                    random_vectors = flat[torch.randint(len(flat), (len(dead_indices),))]
+                    self.embedding[dead_indices] = random_vectors + torch.randn_like(random_vectors) * 0.01
+                    self.usage_count[dead_indices] = self.usage_threshold
+
+        z_q_st = z + (z_q - z).detach()
+        commitment_loss = 0.25 * torch.mean((z_q.detach() - z) ** 2)
+        return z_q_st, indices.reshape(z.shape[:-1]), commitment_loss
