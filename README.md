@@ -1,11 +1,12 @@
 # Tri-Transformer
 
-AI 幻觉检测与实时通信系统 - 基于三分支 Transformer 架构
+AI 幻觉检测与实时通信系统 - 基于三分支 Transformer 架构（ITransformer / CTransformer / OTransformer）
 
 [![CI/CD](https://github.com/your-org/tri-transformer/actions/workflows/ci-cd.yml/badge.svg)](https://github.com/your-org/tri-transformer/actions/workflows/ci-cd.yml)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
 [![React 18+](https://img.shields.io/badge/react-18+-blue.svg)](https://react.dev/)
+[![PyTorch](https://img.shields.io/badge/PyTorch-2.0+-ee4c2c.svg)](https://pytorch.org/)
 
 ## 📋 目录
 
@@ -14,6 +15,7 @@ AI 幻觉检测与实时通信系统 - 基于三分支 Transformer 架构
 - [快速开始](#-快速开始)
 - [开发指南](#-开发指南)
 - [项目结构](#-项目结构)
+- [模型训练与评估](#-模型训练与评估)
 - [API 文档](#-api-文档)
 - [测试](#-测试)
 - [部署](#-部署)
@@ -22,12 +24,15 @@ AI 幻觉检测与实时通信系统 - 基于三分支 Transformer 架构
 ## ✨ 功能特性
 
 - 🤖 **AI 幻觉检测**: 基于 PyTorch I/C/O 三分支 Transformer 模型，高精度检测 AI 生成内容中的幻觉
-- 📚 **RAG 知识库问答**: 支持文档上传、向量化检索、混合检索 + 重排序
+- 📚 **RAG 知识库问答**: 支持文档上传、向量化检索、混合检索 + BM25 重排序
 - 💬 **实时通信**: WebSocket/WebRTC 实时音视频通信，支持文本/音频/视频三种对话模式
 - 📊 **数据可视化**: React + Recharts 实时展示对话指标、训练状态等数据
 - 🔐 **用户认证**: JWT 认证系统，支持用户注册、登录
-- 🎯 **模型训练**: 支持 LoRA/QLoRA 微调，自定义损失函数 (幻觉/RAG/控制对齐)
+- 🎯 **模型训练**: 支持 LoRA/QLoRA 微调，自定义损失函数（幻觉检测 / RAG 对齐 / 控制对齐）
+- 🔬 **模型评估**: 完整评估管道，含 evaluate.py / evaluation.py / quick_start.py
+- 🖥️ **推理 CLI**: 命令行推理工具 inference_cli.py，支持批量推理与流式输出
 - 🔄 **流式响应**: 支持流式输出，实时显示生成内容
+- 🚀 **CI/CD**: GitHub Actions 自动化构建、测试与部署
 
 ## 🛠️ 技术栈
 
@@ -215,17 +220,63 @@ tri-transformer/
 │   ├── pipeline/          # 评估流程
 │   └── tests/             # 测试文件
 ├── docs/                   # 文档
+│   ├── agent/             # 开发指南（架构/命令/测试/约定）
+│   ├── installation/      # 安装指南
+│   ├── API_REFERENCE.md   # API 参考手册
+│   ├── FAQ.md             # 常见问题
+│   └── QUICKSTART.md      # 快速入门
 ├── scripts/                # 自动化脚本
 │   ├── dev.ps1           # Windows 脚本
-│   └── dev.sh            # Linux/macOS 脚本
+│   ├── dev.sh            # Linux/macOS 脚本
+│   ├── check-status.ps1  # Windows 状态检查
+│   └── check-status.sh   # Linux/macOS 状态检查
 └── docker-compose.yml     # Docker 配置
 ```
+
+## 🔬 模型训练与评估
+
+### 快速验证模型
+
+```bash
+cd backend
+python verify_model.py
+```
+
+### 训练模型
+
+```bash
+cd backend
+python app/services/model/train.py --config configs/train_config.yaml
+```
+
+### 评估模型
+
+```bash
+cd backend
+python app/services/model/evaluate.py --checkpoint path/to/checkpoint
+```
+
+### 命令行推理
+
+```bash
+cd backend
+python app/services/model/inference_cli.py --input "你的输入文本"
+```
+
+### 快速体验 Demo
+
+```bash
+python demo.py
+```
+
+详见 [训练指南](docs/agent/training_guide.md) 和 [模型实现总结](MODEL_IMPLEMENTATION_SUMMARY.md)。
 
 ## 📡 API 文档
 
 启动后端后访问:
 - Swagger UI: http://localhost:8000/docs
 - ReDoc: http://localhost:8000/redoc
+- 完整 API 参考: [docs/API_REFERENCE.md](docs/API_REFERENCE.md)
 
 ### 主要 API 端点
 
@@ -332,8 +383,18 @@ docker-compose up -d
 ## 🙏 致谢
 
 - Transformer 架构的提出者
-- FastAPI、React 等开源框架的贡献者
+- FastAPI、React、PyTorch 等开源框架的贡献者
 - 所有参与本项目的开发者
+
+## 📚 相关文档
+
+- [快速入门](docs/QUICKSTART.md)
+- [安装指南](docs/installation/INSTALLATION.md)
+- [API 参考](docs/API_REFERENCE.md)
+- [常见问题](docs/FAQ.md)
+- [更新日志](CHANGELOG.md)
+- [贡献指南](CONTRIBUTING.md)
+- [模型实现总结](MODEL_IMPLEMENTATION_SUMMARY.md)
 
 ## 📞 联系方式
 
