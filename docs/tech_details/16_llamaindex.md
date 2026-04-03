@@ -1,5 +1,14 @@
 # LlamaIndex（RAG 编排框架）
 
+## 0. 结论先行
+
+- **核心定位**：最受欢迎的开源 RAG 编排框架，提供文档摄入→分块→嵌入→索引→检索→生成完整 Pipeline，与 Milvus/ChromaDB/Qdrant 等向量库原生集成。
+- **工程推荐**：直接使用 `llama-index-core` + `llama-index-vector-stores-milvus`；检索策略优先 `HybridRetriever`（向量 + BM25），配合 `SentenceWindowNodeParser`（含前后窗口上下文）；复杂多跳问题用 `SubQuestionQueryEngine`。
+- **多模态 RAG**：`MultiModalVectorStoreIndex` 支持图文混合索引，`GPT4VMultiModal` 或本地 Qwen-VL 作为视觉理解节点，文本/图像嵌入分别用 `text-embedding-3-small` / `SigLIP`。
+- **Tri-Transformer 中的角色**：知识库构建与检索编排层，负责全流程 RAG 管理；`LlamaAgents`/`Workflows` 可编排 I→C→O 三阶段问答推理；与 Milvus 集成存储多模态嵌入。
+
+---
+
 ## 1. 概述
 
 LlamaIndex（原名 GPT Index）是由 Jerry Liu 等人创建的开源数据框架，专为将外部数据与 LLM 应用集成而设计，是目前最受欢迎的 RAG 编排框架之一（GitHub 48.1K stars）。LlamaIndex 提供从文档摄入（Ingestion）、索引构建（Indexing）、检索（Retrieval）到生成（Generation）的完整 RAG Pipeline，并原生支持多模态、Agent、工作流等高级场景。

@@ -1,5 +1,14 @@
 # Bidirectional Encoder（双向编码器）
 
+## 0. 结论先行
+
+- **核心作用**：不施加任何掩码，每个位置同时关注序列左右全部 Token，获得包含完整上下文的全局语义表征，是语义理解（非生成）的标准骨干。
+- **工程首选**：ModernBERT（2024）引入 RoPE + FlashAttention + 8K 上下文，是当前最强开源双向编码器，可直接替换老版 BERT 作为 I-Transformer 编码骨干。
+- **与生成模型的本质区别**：双向编码器输出不是 logits，而是上下文化表征向量（`[B, T, D]`），供下游分类/检索/跨模态对齐任务消费；不能做自回归生成。
+- **Tri-Transformer 中的角色**：I-Transformer 第二阶对 Chunking 输出的宏块特征执行全局双向建模，生成深层语义编码 `i_enc`，通过 State Slots 传递给 C-Transformer。
+
+---
+
 ## 1. 概述
 
 双向编码器（Bidirectional Encoder）指在自注意力计算时不施加任何掩码，每个位置可以同时关注序列左侧与右侧的全部 Token，从而获得包含完整上下文的全局语义表征。以 BERT 为代表，是 NLP 语义理解领域的基础架构。

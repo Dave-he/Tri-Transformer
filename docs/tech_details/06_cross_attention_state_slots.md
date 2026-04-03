@@ -1,5 +1,14 @@
 # Cross-Attention & State Slots（交叉注意力与状态槽）
 
+## 0. 结论先行
+
+- **Cross-Attention 核心作用**：Query 来自目标序列，Key/Value 来自源序列，实现"以目标视角查询源信息"的跨序列信息融合，是 Encoder-Decoder 架构的标准连接机制。
+- **State Slots 的创新价值**：可学习的连续状态向量充当全局对话记忆与控制锚点，通过竞争性交叉注意力从 I/O 端提取关键信息；相比无限增长的 KV Cache，状态槽以固定内存维持长期记忆，工程上可控。
+- **工程推荐**：状态槽数量 K=8~32，维度与主模型 `d_model` 一致；使用 SDPA 后端，Key/Value 来自状态槽，Query 来自当前 Token 序列；状态槽更新采用 EMA 或门控更新，避免单步梯度冲击。
+- **Tri-Transformer 中的角色**：C-Transformer 核心信息流通机制，实现 I→C→O→C 的闭环状态更新；状态槽是 I-Transformer 语义编码与 O-Transformer 生成规划之间的持久化桥梁。
+
+---
+
 ## 1. 概述
 
 **交叉注意力（Cross-Attention）** 是 Transformer Encoder-Decoder 架构中连接两个不同序列的核心机制：Query 来自目标序列，Key/Value 来自源序列，实现"以目标视角查询源信息"。

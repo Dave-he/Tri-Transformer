@@ -1,5 +1,14 @@
 # Milvus（多模态向量数据库）
 
+## 0. 结论先行
+
+- **核心定位**：云原生向量数据库，十亿级向量毫秒级 ANN 检索，原生支持混合搜索（向量 + 标量过滤），是多模态 RAG 系统知识库底座的事实标准。
+- **工程推荐**：开发阶段用 Milvus Lite（单文件，无需 Docker）；生产环境用 Standalone（单节点）或 Distributed（Kubernetes 多节点）；索引策略：< 100 万向量用 HNSW（延迟最低），> 1 亿向量用 DiskANN（存储高效），混合检索用稀疏向量 + BM25。
+- **关键参数**：embedding 维度与模型对齐（text: 1024/1536，vision: 1024，audio: 512）；相似度度量优先用 `COSINE`（归一化向量）；批量插入建议 batch_size=1000-5000。
+- **Tri-Transformer 中的角色**：存储多模态知识库（文本/图像/音频片段）的嵌入向量，支持 O-Transformer Planning Encoder 生成前的跨模态 RAG 查询；状态槽（State Slots）的持久化存储后端候选。
+
+---
+
 ## 1. 概述
 
 Milvus 是由 Zilliz 开源、Linux Foundation AI & Data 托管的云原生向量数据库，专为海量向量相似度搜索而设计。它支持十亿级向量的毫秒级近似最近邻（ANN）检索，是目前最活跃的开源向量数据库之一（GitHub 43.5K stars）。

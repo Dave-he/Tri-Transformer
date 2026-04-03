@@ -1,5 +1,14 @@
 # DeepSpeed ZeRO-3（零冗余优化器）
 
+## 0. 结论先行
+
+- **核心作用**：将优化器状态、梯度、模型参数三类训练状态完全分片到所有 GPU，理论最高降低单卡显存 64×，是在有限 GPU 资源上训练超大规模模型的核心基础设施。
+- **选型建议**：ZeRO-1（仅优化器分片）→ ZeRO-2（+ 梯度分片）→ ZeRO-3（+ 参数分片），显存限制越紧选阶段越高；ZeRO-3 + CPU Offload 是单机多卡训练超大模型的最佳方案，代价是约 30-40% 通信开销。
+- **FSDP 对比**：DeepSpeed ZeRO-3 功能更完整（CPU/NVMe Offload）；PyTorch FSDP 原生集成更便利，适合中型模型（≤ 30B）；两者性能相近，选 FSDP 更易维护，选 DeepSpeed 功能更全。
+- **Tri-Transformer 中的角色**：I/C/O-Transformer 三分支 + 两端大模型联合训练时的分布式内存管理基础设施；LoRA 缝合训练阶段（`19_lora_qlora.md`）的配套工具，Phase 1 单机可用 ZeRO-2，联合全量训练需 ZeRO-3。
+
+---
+
 ## 1. 概述
 
 DeepSpeed ZeRO（Zero Redundancy Optimizer）是 Microsoft 开发的大模型分布式训练内存优化技术（arXiv:1910.02054，SC 2020 最佳论文）。ZeRO-3 是其最高阶段，通过将**优化器状态、梯度、模型参数**三类训练状态完全分片到所有 GPU，理论上可将单卡显存需求降低最高 64 倍，使得在有限 GPU 资源上训练超大规模模型成为可能。

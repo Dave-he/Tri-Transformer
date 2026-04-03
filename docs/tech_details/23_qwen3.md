@@ -1,5 +1,14 @@
 # Qwen3 架构（基于 Qwen3 实现 Tri-Transformer）
 
+## 0. 结论先行
+
+- **核心架构特点**：GQA（num_kv_heads=8）+ RoPE（rope_theta=1M）+ RMSNorm + QK-Norm + SwiGLU MLP，词表 152K，原生支持 32K 上下文（可扩展至 128K），是当前最强开源 Dense LLM。
+- **Tri-Transformer 最优选型**：I/O 端插拔大模型选 Qwen3-8B（理解/生成均衡，单 A100 80G 可跑缝合训练）；算力受限选 Qwen3-0.6B/1.7B 作为 I/O 端 + Qwen3-8B 作为 C-Transformer；MoE 路线选 Qwen3-30B-A3B（激活参数 3B，显存友好）。
+- **工程推荐**：直接用 HuggingFace `transformers>=4.51.0` 加载；非思考模式（设置 `enable_thinking=False`）用于实时对话；LoRA 微调参数：`r=64, alpha=128, target_modules=["q_proj","k_proj","v_proj","o_proj","gate_proj","up_proj","down_proj"]`。
+- **关键参数与 C-Transformer 对齐**：`hidden_size=4096`（8B），`num_attention_heads=32`，`num_key_value_heads=8`，`head_dim=128`——C-Transformer 设计维度应与此对齐以消除接缝。
+
+---
+
 ## 1. 概述
 
 Qwen3 是阿里云通义团队于 2025 年发布的第三代 Qwen 系列大语言模型，提供 Dense（0.6B/1.7B/4B/8B/14B/32B）和 MoE（30B-A3B / 235B-A22B）两条产品线，全系支持 **128K 上下文**（8B+），并引入**思考模式（Thinking Mode）**与**非思考模式（Non-Thinking Mode）**的动态切换。

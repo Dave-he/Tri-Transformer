@@ -1,5 +1,14 @@
 # VQ-GAN（向量量化生成对抗网络）
 
+## 0. 结论先行
+
+- **核心作用**：CNN 编码器的局部归纳偏置 + 向量量化（VQ）+ Transformer 全局序列建模，将连续图像/视频特征映射为离散视觉 Token，使自回归 Transformer 可以生成高分辨率视觉内容。
+- **关键设计**：Codebook Collapse 是 VQ 训练的主要工程风险（大量码本条目闲置），需配合 EMA 码本更新 + commitment loss + 定期重置低使用率条目。
+- **工程推荐**：Phase 3 全模态阶段优先使用 COSMOS Tokenizer（NVIDIA，开源，支持图像+视频，提供连续 VAE 和离散 FSQ 两种变体）；离散视觉 Token 与音频/文本 Token 共享 `d_model` 嵌入空间，通过 Modality Embedding 区分。
+- **Tri-Transformer 中的角色**：将视频帧/图像编码为离散视觉 Token，供 I-Transformer 视觉理解和 O-Transformer 视觉生成处理，是多模态 Any-to-Any Token 化的视觉分支。
+
+---
+
 ## 1. 概述
 
 VQ-GAN（Vector Quantized Generative Adversarial Network），由 Esser et al. 在《Taming Transformers for High-Resolution Image Synthesis》（CVPR 2021，arXiv:2012.09841）中提出。它将**CNN 编码器的局部归纳偏置**与**Transformer 的全局序列建模能力**有机结合，通过向量量化将连续图像/视频特征空间映射为离散视觉 Token，使 Transformer 可以自回归地生成高分辨率视觉内容。

@@ -1,5 +1,14 @@
 # AnyGPT & Any-to-Any 多模态范式
 
+## 0. 结论先行
+
+- **核心范式**：通过"数据层统一"（而非架构改造），将多种模态的离散 Token 统一在标准 LLM 框架中，实现任意模态输入→任意模态输出，无需针对不同任务组合多个专用模型。
+- **关键瓶颈**：模态 Token 速率失配（文本 ~10 Token/s vs 音频 ~75 Token/s vs 视频 ~25 Token/s × fps）导致序列长度急剧增长，需配合分层 Token 化（粗粒度语义 Token + 细粒度声学 Token）缓解。
+- **工程推荐**：模态边界标记（`<image>...</image>`，`<audio>...</audio>`）+ 模态嵌入（Modality Embedding）+ 统一嵌入矩阵，参考 AnyGPT/Emu3 实现；优先使用已有开源 Tokenizer（EnCodec/SNAC for audio, COSMOS for video）而非从头训练。
+- **Tri-Transformer 中的角色**：为 I/O 端共享离散 Token 空间的设计（BPE + Codec + VQ）提供验证依据和词表设计参考；I/O 端"可插拔大模型"可直接复用 AnyGPT/Emu3 的多模态 Tokenizer 生态。
+
+---
+
 ## 1. 概述
 
 **Any-to-Any 范式**是指单一模型能够接受任意模态（文本、语音、图像、视频、音乐）的输入，并生成任意模态的输出，无需针对不同任务组合多个专用模型。

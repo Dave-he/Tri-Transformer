@@ -1,5 +1,14 @@
 # 前沿架构对比：GPT-4o / Moshi / VALL-E / Qwen2-Audio / AnyGPT / Chameleon
 
+## 0. 结论先行
+
+- **GPT-4o 的核心启示**：端到端原生多模态（无 ASR→LLM→TTS 级联）是延迟与质量的根本来源，Tri-Transformer 的 I/C/O 三分支正是对这一路线的工程化简化实现。
+- **Moshi 的核心启示**：双流因果 Transformer（文本流 + 音频流并行）+ Inner Monologue 机制，是目前已开源的最接近 Tri-Transformer 架构理念的系统，可作为工程参考基准。
+- **VALL-E 2 的核心启示**：分组编解码（Grouped Codec Language Modeling）+ 一致性解码，解决了 Codec LM 生成稳定性问题，对 O-Transformer 音频生成质量有直接参考价值。
+- **Tri-Transformer 差异化**：三分支独立建模（I=理解，C=控制，O=生成）+ State Slots 闭环 + RAG 知识库注入，在实时可控性和幻觉检测能力上相比上述系统有明确优势定位。
+
+---
+
 ## 1. 概述
 
 本文档对 Tri-Transformer 架构设计所参考的六个前沿多模态系统进行深度技术对比，分析各自的架构创新、优缺点与局限性，总结对 Tri-Transformer 的具体启示。

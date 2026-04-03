@@ -1,5 +1,14 @@
 # BPE（字节对编码 / Byte Pair Encoding）
 
+## 0. 结论先行
+
+- **核心作用**：迭代合并最高频字符对构建子词词表，解决开放词汇表（OOV）问题，是 GPT/Llama/Qwen/Claude 等所有主流 Transformer 语言模型的标准文本 Tokenizer。
+- **词表规模趋势**：32K（早期 GPT-2）→ 50K（GPT-3）→ 100K（Llama 3）→ 152K（Qwen3）→ 256K（Gemma 2），更大词表减少序列长度，尤其对中文和代码有显著压缩效益。
+- **工程推荐**：直接使用 `tiktoken`（OpenAI，速度最快）或 HuggingFace `tokenizers`（Rust 实现）；多模态统一词表：BPE 文本词表 + Codec 音频 Token 词表 + VQ 视觉 Token 词表合并，使用统一嵌入矩阵 + Modality Embedding 区分。
+- **Tri-Transformer 中的角色**：文本模态标准 Token 化，与音频 Codec Token、视觉 VQ Token 共同构成统一多模态离散 Token 空间；词表扩展时建议增量训练新 Token 嵌入，冻结原有文本嵌入层。
+
+---
+
 ## 1. 概述
 
 BPE（Byte Pair Encoding）最初是一种数据压缩算法，由 Sennrich et al. 于 2016 年引入 NLP 领域（arXiv:1508.07909，ACL 2016），用于解决神经机器翻译中的开放词汇表（Open Vocabulary）问题。通过迭代合并最高频字符对构建子词词表，BPE 已成为 GPT、Llama、Qwen、Claude 等所有主流 Transformer 语言模型的标准文本 Tokenizer。

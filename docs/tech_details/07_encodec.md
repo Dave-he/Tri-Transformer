@@ -1,5 +1,14 @@
 # EnCodec（神经音频编解码器）
 
+## 0. 结论先行
+
+- **核心作用**：端到端训练的流式卷积网络 + 残差向量量化（RVQ），将连续音频波形压缩为层次化离散声学 Token 序列，是基于 Codec 的语音语言模型（VALL-E、Moshi 等）的标准音频离散化基础设施。
+- **关键参数**：24kHz 单声道，8 个量化器（N=8），每个码本 1024 个条目，Token 速率 75 Token/s，总码率约 6 kbps；推理速度优于实时（CPU 可跑）。
+- **工程推荐**：直接使用 `encodec` PyPI 包的预训练模型；音频 Token 与文本 BPE Token 共享嵌入空间时，建议追加独立嵌入层而非共享嵌入矩阵（避免梯度干扰）。
+- **Tri-Transformer 中的角色**：I-Transformer 音频流输入的预处理（波形 → Codec Token），O-Transformer 输出的后处理（Codec Token → 波形）；是 Phase 2 音频对话阶段的默认方案。
+
+---
+
 ## 1. 概述
 
 EnCodec 是 Meta AI 于 2022 年发布的高保真神经音频编解码器（arXiv:2210.13438），通过端到端训练的流式卷积 Encoder-Decoder 网络 + 残差向量量化（Residual Vector Quantization, RVQ），将连续音频波形压缩为层次化**离散声学 Token** 序列，同时保持实时性（编解码速度优于实时）。

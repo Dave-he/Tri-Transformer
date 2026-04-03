@@ -1,5 +1,15 @@
 # DiT（Diffusion Transformer）
 
+## 0. 结论先行
+
+- **核心贡献**：用 ViT 式 Transformer 替换扩散模型 U-Net 主干，在 ImageNet class-conditional 上建立"FID 随 Gflops 稳定改善"的规模律，是可扩展生成建模的标准骨干配方。
+- **关键设计**：latent patch tokenization（VAE latent → patch tokens）+ adaLN-Zero 条件注入（时间步 + 类别/文本），其中 adaLN-Zero 零初始化让每个 block 初始为近似 identity，是训练稳定性的核心来源。
+- **工程推荐**：条件注入优先选 adaLN-Zero（计算开销几乎为零）；文本序列条件可加 cross-attention 层（+~15% Gflops）；扩散 backbone 推荐 SDPA 统一后端，自动落到 FlashAttention fused kernel。
+- **后续主流衍生**：SD3/MM-DiT（双流文本-图像注意力）、FLUX（混合单/双流）、CogVideoX（时空 3D patch）均基于此配方演化，规模律持续成立（模型越大 FID 越低，无明显天花板）。
+- **Tri-Transformer 中的角色**：C-Transformer 借鉴 DiT 的条件调制机制（adaLN-Zero），以 DiT 架构作为"生成式控制中枢"，维护全局对话状态，通过条件调制控制 I/O 两端特征分布。
+
+---
+
 ## 1. 概述
 
 Diffusion Transformer（DiT）是 William Peebles 与 Saining Xie 于 2022 年提出的扩散模型架构（arXiv:2212.09748，ICCV 2023 最佳论文候选）。其核心贡献是：**用 Transformer 替换扩散模型中传统的 U-Net 主干**，作用于 VAE 编码的潜在空间 Patch，并以清晰的规模律（Scaling Law）验证了 Transformer 在生成任务中的可扩展性。

@@ -1,5 +1,14 @@
 # vLLM & PagedAttention（高效大模型推理服务）
 
+## 0. 结论先行
+
+- **核心贡献**：PagedAttention 受操作系统分页内存启发，将 KV Cache 分块管理（每块 16 Token），消除碎片与预分配浪费，相比 FasterTransformer/Orca 吞吐提升 2-4×，是当前 LLM serving 的事实标准引擎。
+- **工程推荐**：`pip install vllm`，5 行代码启动异步推理服务；流式输出用 `AsyncLLMEngine` + WebSocket；量化推理用 `quantization="awq"` 或 `"gptq"`，INT4 量化可再降 40% 显存。
+- **关键配置**：`max_num_seqs`（并发请求数）和 `gpu_memory_utilization`（0.85-0.90）是吞吐调优核心参数；多模态推理需 `vllm>=0.5.0` + `--model-type qwen2_vl`。
+- **Tri-Transformer 中的角色**：O-Transformer 输出解码的高并发推理引擎；WebSocket/WebRTC 实时流式推理接入层；配合 `prefix_caching=True` 对 RAG 检索内容共享前缀做 KV Cache 复用，降低延迟约 30-50%。
+
+---
+
 ## 1. 概述
 
 **vLLM** 是 UC Berkeley 开发的高吞吐量 LLM 推理与服务引擎（arXiv:2309.06180，SOSP 2023 最佳论文），其核心创新 **PagedAttention** 受操作系统虚拟内存与分页技术启发，将 KV Cache 管理精细化，消除内存碎片，并支持 KV Cache 在请求间的灵活共享。相比当时 SOTA 系统（FasterTransformer、Orca），vLLM 在相同延迟下吞吐量提升 **2-4×**。

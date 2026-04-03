@@ -1,5 +1,14 @@
 # WebRTC（Web 实时通信）
 
+## 0. 结论先行
+
+- **核心定位**：浏览器原生支持的全双工低延迟 P2P 音视频通信标准，延迟 < 300ms，是数字人/实时多模态对话系统的唯一合适通信方案（相比 WebSocket 延迟低 5-10×）。
+- **工程推荐**：服务端用 `aiortc`（Python AsyncIO WebRTC）；ICE/STUN 用免费的 `stun.l.google.com:19302`；NAT 穿透失败率 > 10% 时需部署 TURN 服务器（coturn）；音频编解码强制使用 Opus（48kHz，20ms 帧，内置 FEC/PLC）。
+- **WHIP/WHEP 新标准**：2024 年起 WHIP（WebRTC HTTP Ingest Protocol）和 WHEP（Egress Protocol）成为媒体服务器接入标准，推荐替代自定义信令，降低接入复杂度。
+- **Tri-Transformer 中的角色**：Phase 3 数字人方案核心通信基础设施，用户浏览器音视频输入 → I-Transformer 流式编码 → C-Transformer 控制 → O-Transformer 生成 → 浏览器渲染的全链路实时通信通道；MediaStream 音频帧直接对接 EnCodec/SNAC Token 化。
+
+---
+
 ## 1. 概述
 
 WebRTC（Web Real-Time Communication）是 W3C 和 IETF 制定的开放标准，允许浏览器和移动应用之间建立**点对点（P2P）的实时音视频和数据通信**，无需安装插件或中间服务器转发媒体流。WebRTC 是目前唯一在浏览器端原生支持的全双工（Full-duplex）低延迟音视频通信标准。

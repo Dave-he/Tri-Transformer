@@ -1,5 +1,14 @@
 # FlashAttention-3（高效注意力计算）
 
+## 0. 结论先行
+
+- **核心贡献**：面向 H100/H800 Hopper GPU，通过 Warp 专化异步流水线 + FP8 量化，将注意力计算 GPU 利用率从 35%（FA-2）提升至 75%（FA-3），BF16 达 740 TFLOPs/s，FP8 接近 1.2 PFLOPs/s。
+- **工程推荐**：PyTorch 2.x 的 `F.scaled_dot_product_attention` 已自动选择 FlashAttention fused kernel（无需手动集成），是绝大多数场景的最佳默认项；需要极致性能时（H100 FP8）再直接调用 `flash_attn` 包。
+- **与 FA-2 的实践差异**：FA-3 主要收益在 H100 FP8 推理；A100 上 FA-2 vs FA-3 差距有限，训练建议直接用 SDPA 即可；Ring Attention 扩展（跨多机 GPU 处理超长序列）需 FA-3 配合。
+- **Tri-Transformer 中的角色**：三分支所有注意力层的计算加速基础设施；多模态长序列（连续音视频流，序列长 4K-32K）训练/推理的关键性能组件；与 KV Cache（`01_causal_mask.md`）和 vLLM（`20_vllm_pagedattention.md`）组成完整的推理加速栈。
+
+---
+
 ## 1. 概述
 
 FlashAttention-3 是 Tri Dao 团队（arXiv:2407.08608）发布的第三代 IO 感知注意力加速算法，专为 NVIDIA Hopper GPU（H100/H800）架构设计。相比 FlashAttention-2 在 H100 上仅 35% 的 GPU 利用率，FA-3 通过三项核心技术创新将利用率提升至 75%（FP16 740 TFLOPs/s），FP8 模式接近 1.2 PFLOPs/s，是目前生产环境中最高效的注意力计算实现。

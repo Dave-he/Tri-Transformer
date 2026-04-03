@@ -1,6 +1,6 @@
 # Tri-Transformer 子技术文档索引
 
-本目录为《Tri-Transformer 可控对话与 RAG 知识库增强系统》技术调研报告的深入展开，共 22 篇子技术文档，覆盖 PRD 与调研报告中全部核心技术名词。
+本目录为《Tri-Transformer 可控对话与 RAG 知识库增强系统》技术调研报告的深入展开，共 25 篇子技术文档，覆盖 PRD 与调研报告中全部核心技术名词。
 
 ---
 
@@ -66,13 +66,17 @@
 |---|---|---|
 | [22_frontier_models.md](./22_frontier_models.md) | GPT-4o / Moshi / VALL-E 2 / Qwen2-Audio / AnyGPT / Chameleon / **Qwen3** | 七大系统架构对比矩阵、Tri-Transformer 差异化分析 |
 | [23_qwen3.md](./23_qwen3.md) | **Qwen3**（Dense + MoE）| QK-Norm / GQA / rope_θ=1M / Thinking Mode / 插拔方案 / LoRA 训练 |
+| [24_transformer_advances_and_dit.md](./24_transformer_advances_and_dit.md) | **2020–至今 Transformer 前沿进展与 DiT** | FlashAttention/RoPE/ALiBi/YaRN/GQA/Mamba/RetNet 脉络、DiT 架构分解与 PyTorch 最小可运行实现 |
+| [25_tri_module_forward_reverse_dit.md](./25_tri_module_forward_reverse_dit.md) | **反向/正向Transformer与DiT联合架构** | 三模块定义、串并联拓扑（A–E）、噪声调度对齐三硬规则、Loss配方、PyTorch工程骨架 |
 
 ---
 
 ## 快速导航
 
 **按技术类别**：
-- 注意力机制：[01](./01_causal_mask.md)、[03](./03_bidirectional_encoder.md)、[06](./06_cross_attention_state_slots.md)、[18](./18_flashattention3.md)
+- 注意力机制：[01](./01_causal_mask.md)、[03](./03_bidirectional_encoder.md)、[06](./06_cross_attention_state_slots.md)、[18](./18_flashattention3.md)、[24](./24_transformer_advances_and_dit.md)
+- Transformer 前沿进展：[24](./24_transformer_advances_and_dit.md)（FlashAttention / RoPE / ALiBi / YaRN / GQA / Mamba / DiT）
+- 联合架构与训练范式：[25](./25_tri_module_forward_reverse_dit.md)（Forward-T / Reverse-T / DiT 串并联拓扑、噪声调度对齐、Loss配方）
 - 音频 Token 化：[07](./07_encodec.md)、[08](./08_snac.md)
 - 视觉 Token 化：[09](./09_vqgan.md)、[10](./10_siglip.md)
 - 多模态统一：[11](./11_bpe.md)、[12](./12_anygpt_any2any.md)、[13](./13_chameleon.md)

@@ -1,5 +1,14 @@
 # Chameleon（早期融合混合模态模型）
 
+## 0. 结论先行
+
+- **核心创新**：图像 Token 与文本 Token 从嵌入层起完全混合，单一 Transformer 主干在统一 Token 空间处理任意序列，无需独立视觉分支或适配器，是早期融合路线的最激进代表。
+- **训练稳定性方案**：QK-Norm（逐头归一化防止注意力 logits 爆炸）+ z-loss（防止 Softmax 饱和）是早期融合混合模态大规模稳定训练的关键技术，已被 Qwen3 等模型采用。
+- **工程推荐**：早期融合需要完整的多模态预训练数据，开发资源紧张时建议先走晚期融合（LLaVA 风格）稳定对齐各模态后再探索早期融合路线；QK-Norm 可作为低成本稳定性增强项直接加入现有 Transformer Block。
+- **Tri-Transformer 中的角色**：为统一嵌入空间的稳定训练提供技术参考；QK-Norm 技术被 C-Transformer 采用以提升多模态联合训练稳定性；统一 Token 空间的词表设计借鉴 Chameleon 的模态边界 Token 方案。
+
+---
+
 ## 1. 概述
 
 Chameleon 是 Meta AI 于 2024 年发布的早期融合（Early-Fusion）Token 化混合模态基础模型（arXiv:2405.09818）。其核心创新是：**图像 Token 与文本 Token 从嵌入层起完全混合处理**，单一 Transformer 主干在统一 Token 空间中建模任意序列的图文混合内容，无需独立的视觉分支或跨模态适配器。

@@ -1,5 +1,14 @@
 # Chunking & Pooling（流式分块与语义池化）
 
+## 0. 结论先行
+
+- **核心作用**：将无限连续实时流按时间窗口或语义边界切分为宏块（Chunk），在宏块粒度上做双向建模，解决"流无终点 vs 双向 Encoder 需要完整序列"的根本矛盾。
+- **工程推荐配置**：Tri-Transformer 目标 chunk_size=100ms（约 1–2 个语义 Token），注意力池化（Attention Pooling）压缩为单个全局表征，在延迟与语义质量间取得最优平衡。
+- **轻量替代方案**：StreamingLLM（Sink Token + 滑动窗口）是 Chunking 的零配置替代，适合对架构改动极为保守的场景；Mamba/RWKV 等线性 RNN 以固定隐状态替代 KV Cache，是另一条路线。
+- **Tri-Transformer 中的角色**：I-Transformer 第一阶（因果流式）与第二阶（双向 Encoder）的桥接层，控制每个宏块的语义粒度与延迟上限。
+
+---
+
 ## 1. 概述
 
 在处理无限连续实时流时，Transformer 面临两个根本矛盾：

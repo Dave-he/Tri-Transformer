@@ -1,5 +1,14 @@
 # SNAC（多尺度神经音频编解码器）
 
+## 0. 结论先行
+
+- **核心创新**：多尺度残差量化——不同量化层工作在不同时间分辨率，低层覆盖粗粒度语音结构（音素级），高层覆盖细粒度声学细节（基频、音色），实现语义与声学信息的自然分离。
+- **与 EnCodec 的关键差异**：同等码率下 SNAC 保留更丰富的语音细节（尤其低码率场景）；粗粒度 Token（12.5 Token/s）天然适合接入语义建模层，细粒度 Token 适合逐步细化生成。
+- **工程推荐**：Phase 2 音频对话阶段优先评估 SNAC 24kHz 版本；粗粒度 Token 接入 I-Transformer 语义编码层，细粒度 Token 由 O-Transformer Streaming Decoder 逐步生成（"先规划后细化"）。
+- **Tri-Transformer 中的角色**：EnCodec 的替代音频 Token 化方案，在低码率高语音质量的对话场景中具备竞争优势；层次化 Token 结构与 Tri-Transformer 的"粗→细"生成架构高度契合。
+
+---
+
 ## 1. 概述
 
 SNAC（Multi-Scale Neural Audio Codec）是一种层次化神经音频编解码器，核心创新在于**多尺度残差量化**：不同的量化层工作在不同的时间分辨率上，低层码本覆盖粗粒度语音结构（音素级），高层码本覆盖细粒度声学细节（基频、音色），实现语义与声学信息的自然分离。
@@ -154,3 +163,14 @@ def snac_codes_to_tokens(codes: list[torch.Tensor]) -> list[int]:
 - Phase 2 音频对话阶段优先评估 SNAC，尤其是 24kHz 版本。
 - 粗粒度 Token（12.5 Token/s）适合接入 I-Transformer 的语义编码层。
 - 细粒度 Token 可由 O-Transformer Streaming Decoder 逐步生成，符合"先规划后细化"的反向 Enc-Dec 架构。
+
+---
+
+## 6. 与 Tri-Transformer 的关联
+
+| SNAC 组件 | Tri-Transformer 对应 | 说明 |
+|---|---|---|
+| 粗粒度量化层（12.5 Token/s） | **I-Transformer** 语义编码层 | 捕获音素级语音结构，供 C-Transformer 语义理解 |
+| 细粒度量化层（高分辨率） | **O-Transformer** Streaming Decoder | 逐层细化声学细节，实现流式高质量语音输出 |
+| 多尺度 RVQ 结构 | C-Transformer 层次化控制 | 与"先规划后细化"的 Enc-Dec 架构天然契合 |
+| 流式解码能力 | 实时音频输出 | 延迟 < 200ms，支持 Phase 2 实时对话场景 |

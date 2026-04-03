@@ -1,5 +1,14 @@
 # SigLIP（Sigmoid 损失语言-图像预训练）
 
+## 0. 结论先行
+
+- **核心创新**：用逐对 Sigmoid 损失替代 CLIP 的 Softmax 对比损失，彻底消除对全局批次归一化的需求，每个图文对独立计算，可使用任意批次大小训练，扩展性显著优于 CLIP。
+- **工程推荐**：直接加载 HuggingFace 上的 `google/siglip-so400m-patch14-384` 预训练权重，用作视觉编码器；输出 patch token 序列（`[B, N_patches, D]`）通过线性投影对齐 LLM 的 `d_model`。
+- **主流多模态 LLM 的标准配置**：PaliGemma、InternVL 2.5、Qwen2-VL 均采用 SigLIP 视觉编码器，是当前开源多模态系统视觉分支的事实标准。
+- **Tri-Transformer 中的角色**：O-Transformer Planning Encoder 的视觉编码骨干，提供对齐了自然语言语义的视觉特征空间，用于视频帧的全局规划与跨模态 RAG 查询向量生成。
+
+---
+
 ## 1. 概述
 
 SigLIP（Sigmoid Loss for Language Image Pre-Training）由 Google 研究人员（Zhai et al.）于 2023 年发布（arXiv:2303.15343，ICCV 2023 Oral），是对 CLIP 对比学习框架的重要改进。其核心创新是：**用逐对 Sigmoid 损失替代 Softmax 对比损失**，彻底消除了对全局批次归一化的需求，实现了更好的训练扩展性和更低的计算成本。
