@@ -13,10 +13,10 @@ import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-from app.model.tokenizer.text_tokenizer import TextTokenizer
-from app.model.trainer import TriTransformerTrainer, TrainerConfig
-from app.model.tri_transformer import TriTransformerConfig
-from app.services.train.dataset_loader import ModelScopeDatasetLoader
+from app.model.tokenizer.text_tokenizer import TextTokenizer  # noqa: E402
+from app.model.trainer import TriTransformerTrainer, TrainerConfig  # noqa: E402
+from app.model.tri_transformer import TriTransformerConfig  # noqa: E402
+from app.services.train.dataset_loader import ModelScopeDatasetLoader  # noqa: E402
 
 
 def parse_args():
@@ -32,13 +32,16 @@ def parse_args():
     parser.add_argument("--job-type", default="lora_finetune",
                         choices=["lora_finetune", "full_finetune", "rag_adapt", "dpo_align"])
     parser.add_argument("--lr", type=float, default=1e-4)
+    parser.add_argument("--save-dir", default=None, help="Checkpoint save directory")
+    parser.add_argument("--resume", default=None, help="Resume from checkpoint path")
+    parser.add_argument("--log-file", default=None, help="Training log JSONL file path")
     return parser.parse_args()
 
 
 def main():
     args = parse_args()
 
-    print(f"=== Tri-Transformer Training ===")
+    print("=== Tri-Transformer Training ===")
     print(f"  Dataset   : {args.dataset}")
     print(f"  Epochs    : {args.epochs}")
     print(f"  Batch size: {args.batch_size}")
@@ -98,7 +101,13 @@ def main():
 
     print()
     print("🚀 开始训练...")
-    history = trainer.train(data_loader=data_loader, max_steps=args.max_steps)
+    history = trainer.train(
+        data_loader=data_loader,
+        max_steps=args.max_steps,
+        save_dir=args.save_dir,
+        resume_from=args.resume,
+        log_file=args.log_file,
+    )
 
     print()
     print("=== 训练完成 ===")

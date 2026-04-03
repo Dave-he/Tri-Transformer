@@ -1,9 +1,9 @@
 import apiClient from './client';
 import type { LoginResponse, User } from '@/types/api';
 
-export const loginApi = async (username: string, password: string): Promise<LoginResponse> => {
+export const loginApi = async (username: string, password: string): Promise<{ token: string; user: User | null }> => {
   const { data } = await apiClient.post<LoginResponse>('/auth/login', { username, password });
-  return data;
+  return { token: data.access_token, user: null };
 };
 
 export const registerApi = async (username: string, password: string, email: string): Promise<{ user: User }> => {

@@ -1,3 +1,4 @@
+import os
 import threading
 from dataclasses import dataclass
 from typing import Callable, Optional
@@ -86,37 +87,43 @@ class TriTransformerTrainer:
             for p in self.model.o_branch.parameters():
                 p.requires_grad = False
 
-    def _make_dummy_batch(self) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    def _make_dummy_batch(self) -> tuple:
         B = self.config.batch_size
         S = self.config.seq_len
-        V = self.config.model.config.vocab_size if hasattr(self.config, "model") else (
-            self.config.model_config.vocab_size if self.config.model_config else self.config.vocab_size
+        V = (
+            self.config.model_config.vocab_size
+            if self.config.model_config
+            else self.config.vocab_size
         )
         src = torch.randint(1, V, (B, S), device=self.config.device)
         tgt_in = torch.randint(1, V, (B, S), device=self.config.device)
         tgt_out = torch.randint(1, V, (B, S), device=self.config.device)
         return src, tgt_in, tgt_out
 
-    def train_epoch(self, epoch: int) -> float:
-        self.model.train()
-        src, tgt_in, tgt_out = self._make_dummy_batch()
-
+    def _compute_loss_and_grad_norm(
+        self, src: torch.Tensor, tgt_in: torch.Tensor, tgt_out: torch.Tensor
+    ) -> tuple:
         self.optimizer.zero_grad()
         output = self.model(src, tgt_in)
         logits = output.logits
-
         B, T, V = logits.shape
         loss = self.criterion(logits.reshape(B * T, V), tgt_out.reshape(B * T))
         loss.backward()
-        nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=1.0)
+        grad_norm = nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=1.0).item()
         self.optimizer.step()
+        return loss.item(), grad_norm
+
+    def train_epoch(self, epoch: int) -> tuple:
+        self.model.train()
+        src, tgt_in, tgt_out = self._make_dummy_batch()
+        loss, grad_norm = self._compute_loss_and_grad_norm(src, tgt_in, tgt_out)
         self.scheduler.step()
+        return loss, grad_norm
 
-        return loss.item()
-
-    def _train_epoch_with_loader(self, data_loader, epoch: int, max_steps: int = None) -> float:
+    def _train_epoch_with_loader(self, data_loader, epoch: int, max_steps: int = None) -> tuple:
         self.model.train()
         total_loss = 0.0
+        total_grad_norm = 0.0
         steps = 0
 
         for batch in data_loader:
@@ -130,37 +137,66 @@ class TriTransformerTrainer:
             tgt_in = tgt_in.to(self.config.device)
             tgt_out = tgt_out.to(self.config.device)
 
-            self.optimizer.zero_grad()
-            output = self.model(src, tgt_in)
-            logits = output.logits
-            B, T, V = logits.shape
-            loss = self.criterion(logits.reshape(B * T, V), tgt_out.reshape(B * T))
-            loss.backward()
-            nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=1.0)
-            self.optimizer.step()
-            total_loss += loss.item()
+            loss, grad_norm = self._compute_loss_and_grad_norm(src, tgt_in, tgt_out)
+            total_loss += loss
+            total_grad_norm += grad_norm
             steps += 1
 
         self.scheduler.step()
-        return total_loss / max(steps, 1)
+        n = max(steps, 1)
+        return total_loss / n, total_grad_norm / n
 
-    def train(self, data_loader=None, max_steps: int = None) -> list[dict]:
+    def train(
+        self,
+        data_loader=None,
+        max_steps: int = None,
+        save_dir: str = None,
+        resume_from: str = None,
+        log_file: str = None,
+    ) -> list:
+        from app.services.train.checkpoint_manager import CheckpointManager
+        from app.services.train.training_logger import TrainingLogger
+
+        ckpt_mgr = CheckpointManager()
+        logger = TrainingLogger(log_file=log_file)
+
+        start_epoch = 0
+        if resume_from is not None:
+            start_epoch = ckpt_mgr.load(self, resume_from)
+            print(f"Resuming from epoch {start_epoch}")
+
+        if save_dir is not None:
+            os.makedirs(save_dir, exist_ok=True)
+
         history = []
-        for epoch in range(1, self.config.num_epochs + 1):
+        for epoch in range(start_epoch + 1, self.config.num_epochs + 1):
             if self.cancel_event.is_set():
                 break
+
             if data_loader is not None:
-                loss = self._train_epoch_with_loader(data_loader, epoch, max_steps=max_steps)
+                loss, grad_norm = self._train_epoch_with_loader(
+                    data_loader, epoch, max_steps=max_steps
+                )
             else:
-                loss = self.train_epoch(epoch)
+                loss, grad_norm = self.train_epoch(epoch)
+
             metrics = {
                 "epoch": epoch,
                 "loss": round(loss, 6),
                 "lr": self.scheduler.get_last_lr()[0],
+                "grad_norm": round(grad_norm, 6),
                 "stage": self.stage,
                 "progress": round(epoch / self.config.num_epochs * 100, 1),
             }
             history.append(metrics)
+            logger.log(metrics)
+
+            if save_dir is not None:
+                ckpt_path = os.path.join(save_dir, f"epoch_{epoch:03d}.pt")
+                ckpt_mgr.save(self, ckpt_path, epoch=epoch, loss=loss)
+                ckpt_mgr.save_best(self, save_dir, metric=loss, epoch=epoch)
+
             if self.metrics_callback:
                 self.metrics_callback(metrics)
+
         return history

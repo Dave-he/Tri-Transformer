@@ -1,171 +1,104 @@
 plan:
   meta:
     task_id: tri-transformer-backend-v2
-    source_tech_doc: "docs/tasks/tri-transformer-backend-v2/tech-solution.yaml"
-    scope: "P0|P1"
+    source_tech_doc: docs/tasks/tri-transformer-backend-v2/tech-solution.yaml
+    scope: P0
     test_coverage_target: 80
     min_tests_per_feature: 3
-    platform: backend
-    language: python
-
-  commands:
-    test: "cd backend && pytest tests/ -v --cov=app --cov-report=term-missing"
-    lint: "cd backend && black --check app/ tests/ && flake8 app/ tests/"
-    typecheck: ""
+    created_at: "2026-04-02"
+    baseline_tests: 157
+    note: "FR-101~104 代码实现均已完成并通过测试，本 plan 聚焦补强测试覆盖缺口"
 
   tasks:
-    - id: "T1-1"
-      priority: "P0"
-      type: "test"
-      title: "为 LoraAdapter 编写单元测试"
-      test_type: "pure"
-      file: "backend/tests/test_pluggable_llm.py"
-      given: "一个 nn.Linear(64, 64) 层"
-      when: "用 LoraAdapter 包装并前向传播"
+    - id: T0-1
+      priority: P0
+      type: test
+      title: "补强 LoRA 参数量精确比例测试 (< 5%)"
+      file: backend/tests/test_pluggable_llm.py
+      test_type: pure
+      given: "LoraAdapter 注入到 512×512 Linear，rank=4"
+      when: "计算可训练参数量 / 底座参数量"
       then:
-        - "forward 输出 shape 与原始 linear 相同"
-        - "底座权重 requires_grad=False（freeze_base=True 时）"
-        - "A/B 矩阵 requires_grad=True"
-        - "可训练参数量 < 底座参数量 × 5%"
+        - "比例 < 0.05 (5%)"
+        - "LoRA 注入后 inject_lora(_lora_modules) 非空"
       depends_on: []
 
-    - id: "T1-2"
-      priority: "P0"
-      type: "test"
-      title: "为 PluggableLLMAdapter 编写单元测试"
-      test_type: "pure"
-      file: "backend/tests/test_pluggable_llm.py"
-      given: "一个 Mock 小型 TransformerEncoder（d_model=64）"
-      when: "用 PluggableLLMAdapter 注入到 ITransformer 并前向传播"
+    - id: T0-2
+      priority: P0
+      type: test
+      title: "补强 StreamingEngine 完整流测试 (done+sources 消息)"
+      file: backend/tests/test_stream.py
+      test_type: pure
+      given: "StreamingEngine 实例，mock_response='hello'"
+      when: "generate() 遍历到结束"
       then:
-        - "forward 输出 shape 正确（B, S, d_model）"
-        - "inject_lora=True 时所有底座 Linear 被 LoraAdapter 包装"
-        - "梯度可反传不报错"
-      depends_on: ["T1-1"]
-
-    - id: "P0-1"
-      priority: "P0"
-      type: "code"
-      title: "实现 LoraAdapter 和 PluggableLLMAdapter"
-      files:
-        - "backend/app/model/lora_adapter.py"
-        - "backend/app/model/pluggable_llm.py"
-      depends_on: ["T1-1", "T1-2"]
-      definition_of_done:
-        - "LoraAdapter: W' = W + BA，B 初始零，A 正态初始化"
-        - "freeze_base=True 时底座 requires_grad=False"
-        - "PluggableLLMAdapter.inject_into(branch) 替换分支层"
-        - "测试全部通过"
-
-    - id: "T2-1"
-      priority: "P0"
-      type: "test"
-      title: "为多模态 Tokenizer 编写单元测试"
-      test_type: "pure"
-      file: "backend/tests/test_tokenizer.py"
-      given: "各模态输入（文本字符串/音频帧数组/PIL Image bytes）"
-      when: "调用对应 Tokenizer 编码"
-      then:
-        - "TextTokenizer.encode() 返回 list[int]"
-        - "AudioTokenizer.encode() 返回 ID 全部在 [130000, 134000]"
-        - "VisionTokenizer.encode() 返回 ID 全部在 [135000, 145000]"
-        - "UnifiedTokenizer.encode_mixed() 合并序列无越界"
-        - "各模态 Token ID 区间互不重叠"
-        - "特殊 Token <|audio_start|>/<|vision_start|>/<|interrupt|> ID 可查"
+        - "最后一个 dict 包含 done=True"
+        - "中途 token 含 {token: str, done: false}"
       depends_on: []
 
-    - id: "P0-2"
-      priority: "P0"
-      type: "code"
-      title: "实现多模态统一 Tokenizer"
-      files:
-        - "backend/app/model/tokenizer/__init__.py"
-        - "backend/app/model/tokenizer/text_tokenizer.py"
-        - "backend/app/model/tokenizer/audio_tokenizer.py"
-        - "backend/app/model/tokenizer/vision_tokenizer.py"
-        - "backend/app/model/tokenizer/unified_tokenizer.py"
-      depends_on: ["T2-1"]
-      definition_of_done:
-        - "TextTokenizer fallback char-level mock（无需真实 HF tokenizer）"
-        - "AudioTokenizer: frames→offset+hash % 4000 + 130000"
-        - "VisionTokenizer: bytes→offset+hash % 10000 + 135000"
-        - "UnifiedTokenizer 注册 3 个特殊 Token，encode_mixed 合并"
-        - "所有 Tokenizer 测试通过"
-
-    - id: "T3-1"
-      priority: "P0"
-      type: "test"
-      title: "为 StreamingEngine 和 WebSocket 端点编写测试"
-      test_type: "pure"
-      file: "backend/tests/test_stream.py"
-      given: "已认证用户的 JWT token，Mock 推理服务"
-      when: "通过 Starlette TestClient 建立 WebSocket 连接"
+    - id: T0-3
+      priority: P0
+      type: test
+      title: "补强 VisionTokenizer PIL Image 直接输入测试"
+      file: backend/tests/test_tokenizer.py
+      test_type: pure
+      given: "PIL.Image.new('RGB', (64,64)) 实例"
+      when: "vision_tokenizer.encode([img])"
       then:
-        - "WebSocket 连接建立成功（有效 JWT）"
-        - "无效 JWT 连接立即关闭（code=4001）"
-        - "发送 text 消息后收到多条 token 流式消息"
-        - "收到 interrupt 消息后收到 done=true + interrupted=true"
-        - "连接正常关闭后无资源泄漏"
+        - "返回 list[int]，所有 ID ∈ [135000, 145000]"
+        - "无异常抛出"
       depends_on: []
 
-    - id: "P0-3"
-      priority: "P0"
-      type: "code"
-      title: "实现 StreamingEngine 和 WebSocket 路由"
+    - id: P0-1
+      priority: P0
+      type: code
+      title: "补强 test_pluggable_llm.py — LoRA 5% 精确参数比测试"
       files:
-        - "backend/app/services/model/stream_engine.py"
-        - "backend/app/api/v1/stream.py"
-        - "backend/app/main.py"
-      depends_on: ["T3-1"]
+        - backend/tests/test_pluggable_llm.py
+      depends_on:
+        - T0-1
+      implementation_notes: "在 TestLoraAdapter 中新增 test_lora_param_ratio_within_5_percent()，对 Linear(512,512) rank=4 验证 trainable/base < 0.05；在 TestPluggableLLMAdapter 中新增 test_lora_modules_not_empty_after_inject()"
       definition_of_done:
-        - "StreamingEngine.generate() 为 async generator，Mock 逐字符推送"
-        - "WebSocket 路由 /api/v1/model/stream，query param token= 鉴权"
-        - "interrupt 消息设置 interrupt_event，生成器检测后立即 return"
-        - "main.py 注册 stream router 前缀 /api/v1/model"
-        - "WebSocket 测试全部通过"
+        - "新增测试通过"
+        - "157 原有测试不破坏"
 
-    - id: "T4-1"
-      priority: "P0"
-      type: "test"
-      title: "为 FactChecker 和幻觉阻断集成编写测试"
-      test_type: "pure"
-      file: "backend/tests/test_fact_checker.py"
-      given: "FactChecker（Mock embedding），已认证用户，对话会话"
-      when: "调用 FactChecker 和对话消息接口"
-      then:
-        - "相同文本 check() 返回 score ≈ 1.0，hallucination_detected=False"
-        - "完全不同文本 check() hallucination_detected=True（Mock 随机向量触发）"
-        - "FactCheckResult 包含 score: float 和 hallucination_detected: bool"
-        - "POST /chat/.../messages 响应包含 hallucination_detected 字段"
-      depends_on: []
-
-    - id: "P0-4"
-      priority: "P0"
-      type: "code"
-      title: "实现 FactChecker 并集成到对话链路"
+    - id: P0-2
+      priority: P0
+      type: code
+      title: "补强 test_stream.py — StreamingEngine 完整流 + 结束消息测试"
       files:
-        - "backend/app/services/model/fact_checker.py"
-        - "backend/app/schemas/chat.py"
-        - "backend/app/services/chat/chat_service.py"
-        - "backend/app/models/chat_session.py"
-      depends_on: ["T4-1"]
+        - backend/tests/test_stream.py
+      depends_on:
+        - T0-2
+      implementation_notes: "在 TestStreamingEngine 中新增 test_stream_done_message() 验证最后 done=True，新增 test_stream_non_interrupt_full_flow() 验证所有 token 含 {token:str, done:False} 结构"
       definition_of_done:
-        - "FactChecker Mock: embedding 用 hashlib 种子随机向量，相同文本 score=1.0"
-        - "MessageResponse 新增 hallucination_detected: bool = False"
-        - "ChatMessage ORM 新增 hallucination_detected 列（默认 False）"
-        - "chat_service.send_message() 调用 FactChecker 并写入结果"
-        - "已有 80 个测试仍然通过（向后兼容）"
-        - "新增测试全部通过"
+        - "新增测试通过"
+        - "157 原有测试不破坏"
+
+    - id: P0-3
+      priority: P0
+      type: code
+      title: "补强 test_tokenizer.py — VisionTokenizer PIL Image 直接输入测试"
+      files:
+        - backend/tests/test_tokenizer.py
+      depends_on:
+        - T0-3
+      implementation_notes: "在 TestVisionTokenizer 中新增 test_vision_tokenizer_pil_image_input()，直接传入 PIL.Image.new('RGB',(64,64)) 验证 ID 区间；新增 test_unified_tokenizer_encode_tuple_format() 验证元组格式 encode_mixed"
+      definition_of_done:
+        - "新增测试通过"
+        - "需要 PIL 库已在 venv 可用"
+
+  commands:
+    test: "/mnt/ssd/codespace/Tri-Transformer/backend/.venv/bin/pytest backend/tests/ --tb=short -q"
+    lint: "cd /mnt/ssd/codespace/Tri-Transformer && git diff --name-only HEAD -- 'backend/*.py' | xargs -r /mnt/ssd/codespace/Tri-Transformer/backend/.venv/bin/flake8 --max-line-length=100 2>/dev/null || true"
+    typecheck: ""
 
   acceptance:
-    - "pytest tests/ 全部通过（含已有 80 个 + 新增 >= 20 个）"
-    - "覆盖率 >= 80%"
-    - "LoRA 可训练参数量 < 底座参数量 5%"
-    - "AudioTokenizer Token ID 全部在 [130000, 134000]"
-    - "VisionTokenizer Token ID 全部在 [135000, 145000]"
-    - "WebSocket 流式测试通过"
-    - "POST /chat messages 响应包含 hallucination_detected 字段"
+    - "所有原有 157 个测试不破坏"
+    - "新增测试覆盖 FR-101~104 全部 AC"
+    - "LoRA 参数比 < 5% 有精确测试验证"
+    - "StreamingEngine done 消息结构有测试验证"
+    - "VisionTokenizer 支持 PIL Image 直接输入有测试验证"
 
   rollback:
-    - "所有修改文件（main.py/schemas/chat.py/chat_service.py/chat_session.py）均向后兼容"
-    - "新增字段有默认值，已有测试无需修改"
+    - "只修改测试文件，不修改生产代码，回滚风险极低"

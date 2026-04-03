@@ -73,6 +73,6 @@ export interface ApiResponse<T> {
 }
 
 export interface LoginResponse {
-  readonly token: string;
-  readonly user: User;
+  readonly access_token: string;
+  readonly token_type: string;
 }

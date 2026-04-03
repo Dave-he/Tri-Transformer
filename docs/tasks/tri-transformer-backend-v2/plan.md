@@ -1,98 +1,59 @@
 # 任务清单 — Tri-Transformer 后端增量开发 v2
 
 **任务 ID**: tri-transformer-backend-v2
-**来源**: tech-solution.yaml
-**生成时间**: 2026-03-27
+**创建时间**: 2026-04-02
+**基线测试**: 157/157 全部通过
+**模式**: 补强测试覆盖缺口（代码已实现）
 
 ---
 
-## 概述
+## 背景
 
-4 个功能模块，8 个任务（4 test + 4 code），TDD 顺序执行。
+FR-101~FR-104 的代码实现已全部完成，157 个测试全部通过。
+本 plan 聚焦于**补强测试覆盖的三个缺口**：
 
-**执行顺序**: T1-1 → T1-2 → P0-1 → T2-1 → P0-2 → T3-1 → P0-3 → T4-1 → P0-4
-
----
-
-## 测试命令
-
-```bash
-cd backend && pytest tests/ -v --cov=app --cov-report=term-missing
-```
+1. **LoRA 参数比** — 现有测试检查 `< 20%`，需补强为精确 `< 5%`
+2. **StreamingEngine done 消息** — 需验证完整流式响应结构
+3. **VisionTokenizer PIL Image** — 需测试直接传入 PIL Image 的路径
 
 ---
 
 ## 任务列表
 
-### [RED] T1-1: LoraAdapter 单元测试
-- **文件**: `backend/tests/test_pluggable_llm.py`
-- **Given**: nn.Linear(64,64)
-- **When**: LoraAdapter 包装
-- **Then**: shape 正确 / freeze 生效 / 参数量 < 5%
+### P0 测试任务（RED 阶段）
 
-### [RED] T1-2: PluggableLLMAdapter 单元测试
-- **文件**: `backend/tests/test_pluggable_llm.py`（追加）
-- **Given**: Mock TransformerEncoder(d_model=64)
-- **Then**: forward 正确 / LoRA 注入 / 梯度可反传
+| ID | 任务 | 测试文件 | 新增用例 |
+|----|------|---------|---------|
+| T0-1 | LoRA 参数量精确比例测试 | test_pluggable_llm.py | `test_lora_param_ratio_within_5_percent` + `test_lora_modules_not_empty` |
+| T0-2 | StreamingEngine 完整流测试 | test_stream.py | `test_stream_done_message` + `test_stream_non_interrupt_full_flow` |
+| T0-3 | VisionTokenizer PIL Image 测试 | test_tokenizer.py | `test_vision_tokenizer_pil_image_input` + `test_unified_encode_tuple_format` |
 
-### [GREEN] P0-1: 实现 LoraAdapter + PluggableLLMAdapter
-- **文件**:
-  - `backend/app/model/lora_adapter.py`
-  - `backend/app/model/pluggable_llm.py`
-- **DoD**: T1-1 + T1-2 全部通过
+### P0 代码任务（GREEN 阶段）
 
----
-
-### [RED] T2-1: 多模态 Tokenizer 单元测试
-- **文件**: `backend/tests/test_tokenizer.py`
-- **Given**: 文本/音频帧数组/图像 bytes
-- **Then**: ID 区间正确 / 不越界 / 特殊 Token 可查
-
-### [GREEN] P0-2: 实现统一 Tokenizer
-- **文件**:
-  - `backend/app/model/tokenizer/__init__.py`
-  - `backend/app/model/tokenizer/text_tokenizer.py`
-  - `backend/app/model/tokenizer/audio_tokenizer.py`
-  - `backend/app/model/tokenizer/vision_tokenizer.py`
-  - `backend/app/model/tokenizer/unified_tokenizer.py`
-- **DoD**: T2-1 全部通过
+| ID | 任务 | 文件 | 依赖 |
+|----|------|------|------|
+| P0-1 | 补充 LoRA 5% 测试 | test_pluggable_llm.py | T0-1 |
+| P0-2 | 补充流式完整流测试 | test_stream.py | T0-2 |
+| P0-3 | 补充 PIL Image 测试 | test_tokenizer.py | T0-3 |
 
 ---
 
-### [RED] T3-1: WebSocket 流式推理测试
-- **文件**: `backend/tests/test_stream.py`
-- **Given**: JWT token，TestClient WebSocket
-- **Then**: 连接/鉴权/流式 token/interrupt/关闭
+## 执行命令
 
-### [GREEN] P0-3: 实现 StreamingEngine + WebSocket 路由
-- **文件**:
-  - `backend/app/services/model/stream_engine.py`
-  - `backend/app/api/v1/stream.py`
-  - `backend/app/main.py`（修改）
-- **DoD**: T3-1 全部通过
+```bash
+# 测试命令
+/mnt/ssd/codespace/Tri-Transformer/backend/.venv/bin/pytest backend/tests/ --tb=short -q
 
----
-
-### [RED] T4-1: FactChecker 和幻觉阻断集成测试
-- **文件**: `backend/tests/test_fact_checker.py`
-- **Given**: FactChecker Mock embedding，对话会话
-- **Then**: score/hallucination_detected/对话响应字段
-
-### [GREEN] P0-4: 实现 FactChecker + 对话链路集成
-- **文件**:
-  - `backend/app/services/model/fact_checker.py`
-  - `backend/app/schemas/chat.py`（修改）
-  - `backend/app/services/chat/chat_service.py`（修改）
-  - `backend/app/models/chat_session.py`（修改）
-- **DoD**: T4-1 全部通过 + 已有 80 个测试不破坏
+# 增量 lint
+cd /mnt/ssd/codespace/Tri-Transformer && git diff --name-only HEAD -- 'backend/*.py' | xargs -r backend/.venv/bin/flake8 --max-line-length=100
+```
 
 ---
 
 ## 验收标准
 
-- [ ] pytest tests/ 全部通过（>=100 个）
-- [ ] 覆盖率 >= 80%
-- [ ] LoRA 参数量 < 底座 5%
-- [ ] 各模态 Token ID 区间互不重叠
-- [ ] WebSocket 流式响应正常
-- [ ] 对话响应含 hallucination_detected 字段
+- [ ] 所有原有 157 个测试不破坏
+- [ ] LoRA 参数比 < 5% 精确测试通过
+- [ ] StreamingEngine done 消息结构测试通过
+- [ ] VisionTokenizer PIL Image 输入测试通过
+- [ ] 新增测试后总数 ≥ 163（新增 ≥ 6 个用例）

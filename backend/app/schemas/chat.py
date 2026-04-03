@@ -7,6 +7,7 @@ class CreateSessionRequest(BaseModel):
 
 
 class CreateSessionResponse(BaseModel):
+    id: str
     session_id: str
     title: str
     created_at: datetime

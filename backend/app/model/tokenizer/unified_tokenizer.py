@@ -1,9 +1,15 @@
 from dataclasses import dataclass
-from typing import Union
+from typing import Any, Union
 
 from app.model.tokenizer.text_tokenizer import TextTokenizer
 from app.model.tokenizer.audio_tokenizer import AudioTokenizer
 from app.model.tokenizer.vision_tokenizer import VisionTokenizer
+
+
+@dataclass
+class ModalInput:
+    modality: str
+    data: Any
 
 
 CONTROL_OFFSET = 129900
@@ -13,12 +19,6 @@ SPECIAL_TOKENS = {
     "<|vision_start|>": CONTROL_OFFSET + 1,
     "<|interrupt|>": CONTROL_OFFSET + 2,
 }
-
-
-@dataclass
-class ModalInput:
-    modality: str
-    data: Union[str, list[float], bytes]
 
 
 class UnifiedTokenizer:
@@ -40,18 +40,29 @@ class UnifiedTokenizer:
     def interrupt_id(self) -> int:
         return self._special["<|interrupt|>"]
 
+    def token_to_id(self, token: str) -> Union[int, None]:
+        return self._special.get(token)
+
     def get_special_token_id(self, token: str) -> int:
         return self._special[token]
 
-    def encode_mixed(self, inputs: list[ModalInput]) -> list[int]:
+    def encode_mixed(self, inputs: list) -> list[int]:
         result = []
         for inp in inputs:
-            if inp.modality == "text":
-                result.extend(self.text_tokenizer.encode(inp.data))
-            elif inp.modality == "audio":
+            if hasattr(inp, "modality"):
+                modality = inp.modality
+                data = inp.data
+            elif isinstance(inp, (list, tuple)) and len(inp) == 2:
+                modality, data = inp
+            else:
+                continue
+
+            if modality == "text":
+                result.extend(self.text_tokenizer.encode(data))
+            elif modality == "audio":
                 result.append(self.audio_start_id)
-                result.extend(self.audio_tokenizer.encode(inp.data))
-            elif inp.modality == "vision":
+                result.extend(self.audio_tokenizer.encode(data))
+            elif modality == "vision":
                 result.append(self.vision_start_id)
-                result.extend(self.vision_tokenizer.encode(inp.data))
+                result.extend(self.vision_tokenizer.encode(data))
         return result

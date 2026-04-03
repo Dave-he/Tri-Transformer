@@ -1,4 +1,3 @@
-import math
 import torch
 import torch.nn as nn
 
@@ -8,6 +7,7 @@ class LoraAdapter(nn.Module):
         self,
         linear: nn.Linear,
         rank: int = 8,
+        alpha: float = None,
         freeze_base: bool = True,
     ):
         super().__init__()
@@ -22,9 +22,18 @@ class LoraAdapter(nn.Module):
 
         self.lora_A = nn.Parameter(torch.empty(rank, in_features))
         self.lora_B = nn.Parameter(torch.zeros(out_features, rank))
-        self.scaling = 1.0 / math.sqrt(rank)
+        _alpha = alpha if alpha is not None else rank
+        self.scaling = _alpha / rank
 
         nn.init.normal_(self.lora_A, std=0.02)
+
+    @property
+    def weight(self) -> torch.Tensor:
+        return self.base_weight + (self.lora_B @ self.lora_A) * self.scaling
+
+    @property
+    def bias(self):
+        return self.base_bias
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         base_out = torch.nn.functional.linear(x, self.base_weight, self.base_bias)

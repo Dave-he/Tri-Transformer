@@ -28,6 +28,7 @@ async def create_session(
     svc = ChatService(db)
     session = await svc.create_session(user_id=current_user.id, title=payload.title)
     return CreateSessionResponse(
+        id=session.id,
         session_id=session.id,
         title=session.title,
         created_at=session.created_at,

@@ -1,0 +1,99 @@
+meta:
+  task_id: tri-transformer-training-v2
+  title: "Tri-Transformer 训练推进：Checkpoint + 监控 + 数据训练"
+  platform: backend-python
+  version: "1.0"
+  requirement_version: "1.0"
+  created_at: "2026-04-02"
+  risk_level: LOW
+
+design:
+  summary: |
+    在现有 TriTransformerTrainer 基础上，增加两个独立服务组件：
+    1. CheckpointManager：封装 torch.save/load，保存训练完整状态（model+optimizer+scheduler+meta）
+    2. TrainingLogger：JSON Lines 结构化日志，支持内存读取与文件持久化
+    Trainer 集成上述两组件，train() 新增 save_dir/resume_from 参数。
+    train.py CLI 增加对应三个参数。
+
+  architecture: |
+    backend/app/services/train/
+    ├── checkpoint_manager.py  [NEW] CheckpointManager
+    ├── training_logger.py     [NEW] TrainingLogger
+    └── dataset_loader.py      [EXISTING]
+
+    backend/app/model/
+    └── trainer.py             [MODIFY] 集成 CheckpointManager + TrainingLogger
+
+    backend/scripts/
+    └── train.py               [MODIFY] CLI 参数增强
+
+  data_flow: |
+    train() 每 epoch 末：
+      1. _compute_grad_norm() → 梯度范数
+      2. metrics = {epoch, loss, lr, grad_norm, stage, progress}
+      3. logger.log(metrics) → training_log.jsonl
+      4. ckpt_mgr.save(self, f"{save_dir}/epoch_{epoch:03d}.pt")
+      5. ckpt_mgr.save_best(self, save_dir, loss)
+
+file_changes:
+  - path: "backend/app/services/train/checkpoint_manager.py"
+    change: add
+    summary: "CheckpointManager: save/load/save_best/list_checkpoints"
+    risk: low
+
+  - path: "backend/app/services/train/training_logger.py"
+    change: add
+    summary: "TrainingLogger: log()/get_history(), JSONL 持久化"
+    risk: low
+
+  - path: "backend/app/model/trainer.py"
+    change: modify
+    summary: |
+      1. _train_epoch_with_loader: 计算 grad_norm 并加入 metrics
+      2. train_epoch: 计算 grad_norm 并加入 metrics
+      3. train(): 新增 save_dir/resume_from 参数，集成 ckpt_mgr 和 logger
+    risk: low
+
+  - path: "backend/scripts/train.py"
+    change: modify
+    summary: "新增 --save-dir / --resume / --log-file 参数"
+    risk: low
+
+  - path: "backend/tests/test_checkpoint.py"
+    change: add
+    summary: "CheckpointManager 单元测试（pytest + tmpdir）"
+    risk: low
+
+  - path: "backend/tests/test_training_logger.py"
+    change: add
+    summary: "TrainingLogger 单元测试（pytest + tmpdir）"
+    risk: low
+
+  - path: "backend/tests/test_trainer_checkpoint.py"
+    change: add
+    summary: "Trainer 集成 Checkpoint + Logger 测试"
+    risk: low
+
+implementation_notes:
+  - "CheckpointManager.save(): torch.save({'model_state_dict': ..., 'optimizer_state_dict': ..., 'scheduler_state_dict': ..., 'epoch': epoch, 'loss': loss})"
+  - "CheckpointManager.load(): torch.load(path, map_location=trainer.config.device), 返回 epoch 整数"
+  - "TrainingLogger 写入失败只打印 WARNING，不 raise"
+  - "grad_norm 在 clip_grad_norm_ 前通过 nn.utils.clip_grad_norm_ 计算（max_norm=float('inf')）或直接从已有 clip 结果读取"
+  - "list_checkpoints 按文件名 epoch 数字排序"
+
+validation:
+  acceptance:
+    - "AC1: CheckpointManager save → load 往返：epoch 相同，model/optimizer/scheduler state 可加载"
+    - "AC2: TrainingLogger.log() 追加 JSONL，get_history() 返回正确条目数"
+    - "AC3: trainer.train(save_dir=tmpdir) → tmpdir 下出现 epoch_001.pt"
+    - "AC4: trainer.train() 返回 metrics，每条包含 grad_norm 且为有限浮点数"
+    - "AC5: train.py --resume PATH → stdout 包含 'Resuming from epoch'"
+    - "AC6: pytest tests/test_checkpoint.py tests/test_training_logger.py tests/test_trainer_checkpoint.py 全部通过"
+  test_command: "cd backend && python -m pytest tests/test_checkpoint.py tests/test_training_logger.py tests/test_trainer_checkpoint.py -v"
+  lint_command: "cd backend && python -m flake8 app/services/train/checkpoint_manager.py app/services/train/training_logger.py app/model/trainer.py scripts/train.py --max-line-length=120"
+
+risks:
+  - id: "R1"
+    description: "trainer.py 修改不破坏现有 5 个 TDD 测试（test_trainer_with_dataloader.py）"
+    mitigation: "train() 新增参数均有默认值 None，完全向后兼容"
+    severity: low

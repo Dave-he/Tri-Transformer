@@ -15,8 +15,8 @@ export const useAuthStore = create<AuthState>()(
       login: async (username: string, password: string) => {
         set({ loading: true, error: null });
         try {
-          const { token, user } = await loginApi(username, password);
-          set({ token, user, isAuthenticated: true, loading: false });
+          const { token } = await loginApi(username, password);
+          set({ token, user: { id: '1', username, email: '' }, isAuthenticated: true, loading: false });
         } catch (err) {
           set({ loading: false, error: '用户名或密码错误', isAuthenticated: false });
           throw err;

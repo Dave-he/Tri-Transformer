@@ -1,14 +1,11 @@
-import pytest
-import torch
 import numpy as np
 from PIL import Image
-from io import BytesIO
 
 
 class TestTextTokenizer:
     def test_encode_returns_list_of_int(self):
         from app.model.tokenizer.text_tokenizer import TextTokenizer
-        tokenizer = TextTokenizer(vocab_size=30522)
+        tokenizer = TextTokenizer()
         tokens = tokenizer.encode("hello world")
         assert isinstance(tokens, list)
         assert all(isinstance(t, int) for t in tokens)
@@ -37,6 +34,24 @@ class TestVisionTokenizer:
         assert isinstance(tokens, list)
         assert all(135000 <= t <= 145000 for t in tokens)
 
+    def test_vision_tokenizer_pil_image_input(self):
+        from app.model.tokenizer.vision_tokenizer import VisionTokenizer
+        tokenizer = VisionTokenizer()
+        img = Image.new("RGB", (64, 64), color=(128, 64, 32))
+        tokens = tokenizer.encode([img])
+        assert isinstance(tokens, list)
+        assert len(tokens) > 0
+        assert all(135000 <= t <= 145000 for t in tokens), \
+            f"PIL Image tokens out of range: {[t for t in tokens if not 135000 <= t <= 145000]}"
+
+    def test_vision_tokenizer_single_image_not_list(self):
+        from app.model.tokenizer.vision_tokenizer import VisionTokenizer
+        tokenizer = VisionTokenizer()
+        img = Image.new("L", (32, 32))
+        tokens = tokenizer.encode(img)
+        assert isinstance(tokens, list)
+        assert all(135000 <= t <= 145000 for t in tokens)
+
 
 class TestUnifiedTokenizer:
     def test_encode_mixed_no_overflow(self):
@@ -50,8 +65,6 @@ class TestUnifiedTokenizer:
         tokens = tokenizer.encode_mixed(mixed)
         assert isinstance(tokens, list)
         assert all(isinstance(t, int) for t in tokens)
-        max_text = 30522
-        max_audio = 134000
         max_vision = 145000
         assert all(t <= max_vision for t in tokens)
 
@@ -74,3 +87,19 @@ class TestUnifiedTokenizer:
         assert text_ids.isdisjoint(audio_ids), "Text and audio tokens overlap"
         assert text_ids.isdisjoint(vision_ids), "Text and vision tokens overlap"
         assert audio_ids.isdisjoint(vision_ids), "Audio and vision tokens overlap"
+
+    def test_encode_mixed_tuple_format(self):
+        from app.model.tokenizer.unified_tokenizer import UnifiedTokenizer
+        tokenizer = UnifiedTokenizer()
+        tokens = tokenizer.encode_mixed([
+            ("text", "world"),
+            ("audio", [np.zeros(8000, dtype=np.float32)]),
+        ])
+        assert isinstance(tokens, list)
+        assert len(tokens) > 0
+        assert all(isinstance(t, int) for t in tokens)
+
+    def test_token_to_id_returns_none_for_unknown(self):
+        from app.model.tokenizer.unified_tokenizer import UnifiedTokenizer
+        tokenizer = UnifiedTokenizer()
+        assert tokenizer.token_to_id("<|unknown_token|>") is None

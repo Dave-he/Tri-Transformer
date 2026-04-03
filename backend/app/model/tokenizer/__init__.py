@@ -1,3 +1,3 @@
-from app.model.tokenizer.unified_tokenizer import UnifiedTokenizer, ModalInput
+from app.model.tokenizer.unified_tokenizer import UnifiedTokenizer
 
-__all__ = ["UnifiedTokenizer", "ModalInput"]
+__all__ = ["UnifiedTokenizer"]

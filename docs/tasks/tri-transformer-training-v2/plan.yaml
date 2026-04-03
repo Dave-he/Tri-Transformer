@@ -1,0 +1,198 @@
+plan:
+  meta:
+    task_id: tri-transformer-training-v2
+    source_tech_doc: "docs/tasks/tri-transformer-training-v2/tech-solution.yaml"
+    scope: "P0"
+    test_coverage_target: 80
+    min_tests_per_feature: 3
+    platform: backend-python
+
+  tasks:
+    # ==================== TEST TASKS (RED phase) ====================
+
+    - id: T1-1
+      priority: P0
+      type: test
+      title: "测试 CheckpointManager save/load 往返一致性"
+      test_type: pure
+      file: "backend/tests/test_checkpoint.py"
+      given: "TriTransformerTrainer 使用 small_config 初始化"
+      when: "调用 CheckpointManager().save(trainer, path)，再 load(trainer, path)"
+      then:
+        - "load 返回正确的 epoch 整数"
+        - "model state_dict 键相同"
+        - "optimizer state_dict 可恢复"
+        - "load 不存在路径时抛出 FileNotFoundError"
+      depends_on: []
+
+    - id: T2-1
+      priority: P0
+      type: test
+      title: "测试 CheckpointManager save_best / list_checkpoints"
+      test_type: pure
+      file: "backend/tests/test_checkpoint.py"
+      given: "tmpdir 下有若干 epoch_001.pt ... epoch_005.pt"
+      when: "调用 save_best(trainer, tmpdir, metric) 和 list_checkpoints(tmpdir)"
+      then:
+        - "metric 改善时 best_model.pt 更新，不改善时不更新"
+        - "list_checkpoints 返回按 epoch 数字升序排列的路径列表"
+        - "非 .pt 文件不出现在列表中"
+      depends_on: []
+
+    - id: T3-1
+      priority: P0
+      type: test
+      title: "测试 TrainingLogger log/get_history JSONL 写入"
+      test_type: pure
+      file: "backend/tests/test_training_logger.py"
+      given: "TrainingLogger(log_file=tmpfile)"
+      when: "调用 log({epoch:1, loss:0.5, lr:1e-4}) 两次"
+      then:
+        - "get_history() 返回 2 条记录"
+        - "tmpfile 中有 2 行有效 JSON"
+        - "每行 JSON 含 epoch / loss / lr"
+        - "log_file=None 时 get_history() 仍正常工作（内存模式）"
+      depends_on: []
+
+    - id: T4-1
+      priority: P0
+      type: test
+      title: "测试 TrainingLogger 写入失败降级 WARNING"
+      test_type: pure
+      file: "backend/tests/test_training_logger.py"
+      given: "TrainingLogger(log_file='/nonexistent/dir/log.jsonl')"
+      when: "调用 log(metrics)"
+      then:
+        - "不抛出异常（仅 warnings.warn）"
+        - "get_history() 仍包含该条记录"
+      depends_on: []
+
+    - id: T5-1
+      priority: P0
+      type: test
+      title: "测试 Trainer.train() metrics 包含 grad_norm"
+      test_type: pure
+      file: "backend/tests/test_trainer_checkpoint.py"
+      given: "tiny TriTransformerConfig 和合成 DataLoader"
+      when: "调用 trainer.train()"
+      then:
+        - "返回 metrics 列表，每条含 grad_norm 字段"
+        - "grad_norm 为有限正浮点数"
+        - "dummy 模式（data_loader=None）也含 grad_norm"
+      depends_on: []
+
+    - id: T6-1
+      priority: P0
+      type: test
+      title: "测试 Trainer.train() 集成 save_dir checkpoint 写入"
+      test_type: pure
+      file: "backend/tests/test_trainer_checkpoint.py"
+      given: "tiny trainer + tmpdir"
+      when: "调用 trainer.train(save_dir=tmpdir, num_epochs=2)"
+      then:
+        - "tmpdir 下出现 epoch_001.pt 和 epoch_002.pt"
+        - "出现 best_model.pt"
+        - "save_dir=None 时不写入任何文件"
+      depends_on: []
+
+    - id: T7-1
+      priority: P0
+      type: test
+      title: "测试 Trainer.train(resume_from=...) 断点续训"
+      test_type: pure
+      file: "backend/tests/test_trainer_checkpoint.py"
+      given: "先训 2 epoch 保存 epoch_002.pt，再 resume_from=epoch_002.pt"
+      when: "train(num_epochs=3, resume_from=path)"
+      then:
+        - "history 从 epoch=3 开始（不重复 epoch 1/2）"
+        - "共 1 条 metrics 记录（epoch=3）"
+      depends_on: []
+
+    # ==================== CODE TASKS (GREEN phase) ====================
+
+    - id: P0-1
+      priority: P0
+      type: code
+      title: "实现 CheckpointManager（save/load/save_best/list_checkpoints）"
+      files:
+        - "backend/app/services/train/checkpoint_manager.py"
+      depends_on: ["T1-1", "T2-1"]
+      implementation_notes: |
+        class CheckpointManager:
+          def save(self, trainer, path): torch.save({...}, path)
+          def load(self, trainer, path) -> int: torch.load + load_state_dict, 返回 epoch
+          def save_best(self, trainer, save_dir, metric) -> bool
+          def list_checkpoints(self, save_dir) -> list[str]: sorted by epoch number
+      definition_of_done:
+        - "T1-1、T2-1 测试通过"
+        - "save/load 向后兼容 torch >= 2.0 (weights_only=False)"
+
+    - id: P0-2
+      priority: P0
+      type: code
+      title: "实现 TrainingLogger（log/get_history，JSONL 持久化）"
+      files:
+        - "backend/app/services/train/training_logger.py"
+      depends_on: ["T3-1", "T4-1"]
+      implementation_notes: |
+        class TrainingLogger:
+          def __init__(log_file=None): self._history=[], self._log_file=log_file
+          def log(metrics): append to _history; try write JSONL; except: warnings.warn
+          def get_history() -> list[dict]
+      definition_of_done:
+        - "T3-1、T4-1 测试通过"
+        - "写入失败不 raise，仅 warnings.warn"
+
+    - id: P0-3
+      priority: P0
+      type: code
+      title: "升级 TriTransformerTrainer：grad_norm + save_dir + resume_from"
+      files:
+        - "backend/app/model/trainer.py"
+      depends_on: ["T5-1", "T6-1", "T7-1", "P0-1", "P0-2"]
+      implementation_notes: |
+        1. _compute_grad_norm(max_norm=1.0): 替换 clip_grad_norm_，同时返回 grad_norm
+        2. train_epoch(): 返回 (loss, grad_norm)
+        3. _train_epoch_with_loader(): 返回 (loss, grad_norm)
+        4. train(save_dir=None, resume_from=None, log_file=None):
+           - resume_from: ckpt_mgr.load() 获取 start_epoch
+           - 每 epoch: 调用 logger.log(metrics), ckpt_mgr.save(), ckpt_mgr.save_best()
+           - metrics 新增 grad_norm 字段
+      definition_of_done:
+        - "T5-1、T6-1、T7-1 测试通过"
+        - "现有 test_trainer_with_dataloader.py 全部通过（向后兼容）"
+
+    - id: P0-4
+      priority: P0
+      type: code
+      title: "train.py CLI 增强：--save-dir / --resume / --log-file"
+      files:
+        - "backend/scripts/train.py"
+      depends_on: ["P0-3"]
+      implementation_notes: |
+        parser.add_argument("--save-dir", default=None)
+        parser.add_argument("--resume", default=None)
+        parser.add_argument("--log-file", default=None)
+        if args.resume: print(f"Resuming from epoch {epoch}")
+        调用 trainer.train(save_dir=args.save_dir, resume_from=args.resume, log_file=args.log_file)
+      definition_of_done:
+        - "python scripts/train.py --dataset dummy --epochs 2 --save-dir /tmp/ckpt 正常运行"
+        - "python scripts/train.py --dataset dummy --epochs 3 --resume /tmp/ckpt/epoch_002.pt 输出 Resuming"
+
+  commands:
+    test: "cd backend && python -m pytest tests/test_checkpoint.py tests/test_training_logger.py tests/test_trainer_checkpoint.py -v"
+    lint: "cd backend && python -m flake8 app/services/train/checkpoint_manager.py app/services/train/training_logger.py app/model/trainer.py scripts/train.py --max-line-length=120"
+    typecheck: ""
+    regression: "cd backend && python -m pytest tests/test_trainer_with_dataloader.py -v"
+
+  acceptance:
+    - "AC1: CheckpointManager save → load 往返 epoch 一致"
+    - "AC2: TrainingLogger JSONL 写入，get_history() 正确"
+    - "AC3: train(save_dir=tmpdir) → epoch_001.pt 存在"
+    - "AC4: metrics 每条含 grad_norm（有限浮点）"
+    - "AC5: train.py --resume PATH → stdout 含 Resuming from epoch"
+    - "AC6: 所有新增 pytest 通过，原有 test_trainer_with_dataloader.py 不退化"
+
+  rollback:
+    - "trainer.py 所有新增参数默认 None，不影响现有调用方"
+    - "CheckpointManager/TrainingLogger 为独立文件，不影响现有服务"

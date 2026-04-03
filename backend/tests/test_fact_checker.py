@@ -6,17 +6,17 @@ class TestFactChecker:
     def test_check_identical_text_high_score(self):
         from app.services.model.fact_checker import FactChecker
         checker = FactChecker()
-        score = checker.check("The capital of France is Paris.", ["The capital of France is Paris."])
-        assert score >= 0.9
+        result = checker.check("The capital of France is Paris.", ["The capital of France is Paris."])
+        assert result.score >= 0.9
 
     def test_check_different_text_low_score(self):
         from app.services.model.fact_checker import FactChecker
         checker = FactChecker()
-        score = checker.check(
+        result = checker.check(
             "The sky is green and the grass is blue.",
             ["The capital of France is Paris."]
         )
-        assert score < 0.3
+        assert result.score < 0.3
 
     def test_check_result_structure(self):
         from app.services.model.fact_checker import FactChecker, FactCheckResult
@@ -39,7 +39,7 @@ class TestChatHallucinationField:
     @pytest.mark.asyncio
     async def test_chat_message_response_has_hallucination_field(self, client, auth_headers, test_user):
         from app.schemas.chat import MessageResponse
-        assert hasattr(MessageResponse, "hallucination_detected")
+        assert "hallucination_detected" in MessageResponse.model_fields
 
     @pytest.mark.asyncio
     async def test_send_message_includes_hallucination_field(self, client, auth_headers, test_user):
@@ -55,8 +55,8 @@ class TestChatHallucinationField:
                 headers=auth_headers,
                 json={"title": "Test Session"},
             )
-            assert response.status_code == 200
-            session_id = response.json()["id"]
+            assert response.status_code in (200, 201)
+            session_id = response.json()["session_id"]
 
             msg_response = await client.post(
                 f"/api/v1/chat/sessions/{session_id}/messages",

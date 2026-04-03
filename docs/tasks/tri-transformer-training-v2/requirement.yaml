@@ -1,0 +1,77 @@
+task_id: tri-transformer-training-v2
+title: "Tri-Transformer 训练推进：Checkpoint + 监控 + 数据训练"
+version: "1.0"
+created_at: "2026-04-02"
+platform: backend-python
+
+background: |
+  Tri-Transformer 三分支模型（ITransformer/CTransformer/OTransformer）架构已完整，
+  训练脚本 train.py 已可在 dummy 模式下运行（loss 有限，136 测试全通过）。
+  本轮推进：增加模型 checkpoint 保存/恢复、训练指标可视化记录、以及真实
+  ModelScope 数据集的端到端训练验证。
+
+goals:
+  - id: G1
+    description: "Checkpoint 保存/加载：每 epoch 自动保存，支持断点续训"
+  - id: G2
+    description: "训练指标记录：loss/lr/grad_norm 写入 JSON Lines 日志"
+  - id: G3
+    description: "train.py 增强：--resume 断点续训，--save-dir checkpoint 目录"
+  - id: G4
+    description: "真实数据训练验证：LCCC/BELLE dummy 数据流 end-to-end 通过"
+
+functional_requirements:
+  - id: FR1
+    title: "CheckpointManager"
+    description: "保存/加载模型权重、优化器状态、调度器状态、训练元数据"
+    acceptance_criteria:
+      - "save(path) 写入 .pt 文件，包含 model_state_dict / optimizer_state_dict / scheduler_state_dict / epoch / loss"
+      - "load(path) 恢复所有状态，epoch 从正确值继续"
+      - "list_checkpoints(dir) 返回按 epoch 排序的路径列表"
+      - "save_best(path, metric) 仅在 metric 改善时覆盖 best_model.pt"
+  - id: FR2
+    title: "TrainingLogger"
+    description: "结构化写入训练指标，支持 JSON Lines 格式"
+    acceptance_criteria:
+      - "log(metrics_dict) 追加写入 training_log.jsonl"
+      - "metrics_dict 必须包含 epoch / loss / lr"
+      - "可选字段：grad_norm / step / timestamp"
+      - "get_history() 返回所有已记录的 metrics list"
+  - id: FR3
+    title: "Trainer 集成 Checkpoint + Logger"
+    description: "TriTransformerTrainer 集成上述两个组件"
+    acceptance_criteria:
+      - "train() 接受 save_dir 参数，非 None 时每 epoch 保存 checkpoint"
+      - "train() 接受 resume_from 参数，恢复后从正确 epoch 继续"
+      - "train() 自动调用 logger.log(metrics)"
+      - "metrics 中包含 grad_norm（梯度范数，clip 前计算）"
+  - id: FR4
+    title: "train.py CLI 增强"
+    description: "增加 --save-dir / --resume / --log-file 参数"
+    acceptance_criteria:
+      - "--save-dir DIR 指定 checkpoint 目录（默认 None）"
+      - "--resume PATH 指定恢复的 checkpoint 路径"
+      - "--log-file FILE 指定 JSON Lines 日志路径（默认 None）"
+      - "指定 --resume 时输出'Resuming from epoch X'"
+
+non_functional_requirements:
+  - id: NFR1
+    description: "checkpoint 文件使用 torch.save()，向后兼容 PyTorch >= 2.0"
+  - id: NFR2
+    description: "logger 写入失败（如磁盘满）只 WARNING，不阻断训练"
+
+out_of_scope:
+  - "实际从 ModelScope 网络下载真实数据集（环境无网络）"
+  - "分布式训练 (DDP/FSDP)"
+  - "混合精度训练 (AMP)"
+
+quality_gate:
+  min_score: 75
+  checks:
+    - "功能边界显式声明: ✅ 4 个 FR 均有明确 AC"
+    - "异常场景: ✅ 磁盘写入失败降级 WARNING / resume 路径不存在抛异常"
+    - "接口定义: ✅ CheckpointManager/TrainingLogger 方法签名完整"
+    - "验收标准: ✅ 每条 AC 可机器测试"
+    - "测试框架: ✅ pytest + unittest.mock"
+  score: 88
+  verdict: PASS

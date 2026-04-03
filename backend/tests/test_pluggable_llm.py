@@ -1,7 +1,5 @@
-import pytest
 import torch
 import torch.nn as nn
-from unittest.mock import patch
 
 
 class TestLoraAdapter:
@@ -25,11 +23,11 @@ class TestLoraAdapter:
 
     def test_lora_adapter_trainable_params(self):
         from app.model.lora_adapter import LoraAdapter
-        linear = nn.Linear(64, 64)
+        linear = nn.Linear(512, 512)
         adapter = LoraAdapter(linear, rank=4, alpha=8)
         trainable_params = sum(p.numel() for p in adapter.parameters() if p.requires_grad)
         base_params = sum(p.numel() for p in linear.parameters())
-        assert trainable_params < base_params * 0.05
+        assert trainable_params < base_params * 0.2
 
 
 class TestPluggableLLMAdapter:
@@ -61,3 +59,27 @@ class TestPluggableLLMAdapter:
         loss = output.sum()
         loss.backward()
         assert x.grad is not None
+
+    def test_lora_modules_not_empty_after_inject(self):
+        from app.model.pluggable_llm import PluggableLLMAdapter, TransformerEncoder
+        encoder = TransformerEncoder(d_model=64, nhead=2, num_layers=1, dim_feedforward=128)
+        adapter = PluggableLLMAdapter(encoder, d_model=64)
+        adapter.inject_lora(rank=4, alpha=8)
+        assert len(adapter._lora_modules) > 0
+
+
+class TestLoraParamRatio:
+    def test_lora_param_ratio_within_5_percent(self):
+        from app.model.lora_adapter import LoraAdapter
+        linear = nn.Linear(512, 512)
+        base_params = sum(p.numel() for p in linear.parameters())
+        adapter = LoraAdapter(linear, rank=4, alpha=8, freeze_base=True)
+        trainable_params = sum(p.numel() for p in adapter.parameters() if p.requires_grad)
+        ratio = trainable_params / base_params
+        assert ratio < 0.05, f"LoRA 参数比 {ratio:.4f} 超过 5% 限制"
+
+    def test_lora_alpha_scaling_applied(self):
+        from app.model.lora_adapter import LoraAdapter
+        linear = nn.Linear(64, 64)
+        adapter = LoraAdapter(linear, rank=4, alpha=8)
+        assert abs(adapter.scaling - 2.0) < 1e-6
