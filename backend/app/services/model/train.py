@@ -402,7 +402,12 @@ class AdvancedTrainer:
             {"final_loss": self.training_history[-1]["loss"]},
             filename="checkpoint_final.pt",
         )
-        
+
+        history_path = Path(self.output_dir) / "training_history.json"
+        history_path.parent.mkdir(parents=True, exist_ok=True)
+        with open(history_path, "w") as f:
+            json.dump(self.training_history, f, indent=2)
+
         return self.training_history
 
 

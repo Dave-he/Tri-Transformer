@@ -1,0 +1,67 @@
+task_id: tri-transformer-feature-v1
+title: Metrics/Training API补全 + Chat字段对齐 + 幻觉检测展示
+created_at: "2026-04-09"
+platform: Backend+Web
+priority: P0
+
+summary: >
+  三处功能缺口：
+  1. MetricsPage 完全不可用（GET /api/v1/metrics 和 /training/status 后端不存在，404）
+  2. TrainingPage 部分不可用（/training/start, /training/progress, /models/available 均不存在）
+  3. Chat 消息字段不对齐（后端返回 message_id，前端期望 id；幻觉检测结果未在 UI 展示）
+
+scope:
+  in_scope:
+    # 后端新增
+    - backend/app/api/v1/metrics.py: GET /metrics, GET /training/status
+    - backend/app/api/v1/train.py: 新增 GET /jobs/progress, POST /jobs/start别名, GET /jobs/models
+    - backend/app/main.py: 注册 metrics router
+    # 前端修改
+    - frontend/src/api/conversations.ts: sendMessageApi 响应字段映射 message_id→id
+    - frontend/src/api/trainingConfig.ts: 路径对齐 /training/start→/train/jobs, /training/progress→/train/jobs/progress, /models/available→/train/jobs/models
+    - frontend/src/types/api.ts: Message 新增 hallucinationDetected 可选字段
+    - frontend/src/components/chat/MessageBubble.tsx: 展示幻觉检测 tag
+    # 后端测试
+    - backend/tests/test_metrics.py: 新增
+    # 前端测试更新
+    - frontend/src/store/__tests__/trainingConfigStore.test.ts: 更新 URL
+    - frontend/src/mocks/handlers/trainingConfig.ts: 更新 URL 和路径
+    - frontend/src/mocks/__tests__/handlers.test.ts: 更新 URL 和路径
+  out_of_scope:
+    - 真实 metrics 计算接入 RAG 评估器（本期返回聚合历史数据）
+    - WebRTC 真实媒体实现
+
+acceptance_criteria:
+  - AC1: GET /api/v1/metrics 返回 {current: {retrievalAccuracy, bleuScore, hallucinationRate}, history: [...]}
+  - AC2: GET /api/v1/training/status 返回 {phase, progress, eta, message}
+  - AC3: POST /api/v1/train/jobs/start 等价于已有 POST /api/v1/train/jobs，返回 {jobId}
+  - AC4: GET /api/v1/train/jobs/progress 返回最新 job 进度 {jobId, phase, step, maxSteps, loss, lr, status}
+  - AC5: GET /api/v1/train/jobs/models 返回可用模型列表 {models: [{id, name, type}]}
+  - AC6: 前端发送消息后 message.id 正确（不为 undefined）
+  - AC7: 助手消息在 hallucination_detected=true 时展示橙色 "⚠ 检测到幻觉" 标签
+  - AC8: 前端 TrainingPage 的 startTraining/fetchProgress/fetchAvailableModels 调用新路径后测试通过
+  - AC9: 后端 pytest 全量通过，前端 vitest 全量通过
+  - AC10: flake8 增量检查无 E/F 错误
+
+apis:
+  - method: GET
+    path: /api/v1/metrics
+    response: "Metrics"
+    auth: Bearer JWT
+  - method: GET
+    path: /api/v1/training/status
+    response: "TrainingStatus"
+    auth: Bearer JWT
+  - method: POST
+    path: /api/v1/train/jobs/start
+    request: "TrainingConfig"
+    response: "{jobId: str}"
+    auth: Bearer JWT
+  - method: GET
+    path: /api/v1/train/jobs/progress
+    response: "TrainingProgress"
+    auth: Bearer JWT
+  - method: GET
+    path: /api/v1/train/jobs/models
+    response: "{models: AvailableModel[]}"
+    auth: Bearer JWT

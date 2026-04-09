@@ -2,9 +2,12 @@ import os
 from typing import Optional
 from pydantic import field_validator
 from pydantic_settings import BaseSettings
+from pydantic import ConfigDict
 
 
 class Settings(BaseSettings):
+    model_config = ConfigDict(env_file=".env", case_sensitive=False)
+
     database_url: str = "sqlite+aiosqlite:///./tritransformer.db"
     secret_key: str = "dev-secret-key-change-in-production"
     algorithm: str = "HS256"
@@ -39,10 +42,5 @@ class Settings(BaseSettings):
         if env == "production" and v == "dev-secret-key-change-in-production":
             raise ValueError("生产环境必须通过 SECRET_KEY 环境变量设置安全密钥")
         return v
-
-    class Config:
-        env_file = ".env"
-        case_sensitive = False
-
 
 settings = Settings()

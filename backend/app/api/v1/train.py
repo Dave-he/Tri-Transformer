@@ -4,6 +4,8 @@ from datetime import datetime, timezone
 from typing import Annotated
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
+from pydantic import BaseModel
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sessionmaker
 
 from app.core.config import settings
@@ -13,6 +15,38 @@ from app.models.train_job import TrainJob
 from app.models.user import User
 from app.schemas.train import TrainJobRequest, TrainJobResponse
 from app.services.train.train_service import TrainService
+
+
+_AVAILABLE_MODELS = [
+    {"id": "qwen2-audio", "name": "Qwen2-Audio-7B", "type": "input"},
+    {"id": "qwen2-vl", "name": "Qwen2-VL-7B", "type": "input"},
+    {"id": "llama3-8b", "name": "Llama-3-8B", "type": "output"},
+    {"id": "gpt2", "name": "GPT-2", "type": "output"},
+]
+
+
+class TrainingStartRequest(BaseModel):
+    i_model_id: str
+    o_model_id: str
+    learning_rate: float = 1e-4
+    batch_size: int = 8
+    max_steps: int = 1000
+    phase: int = 0
+
+
+class TrainingProgressResponse(BaseModel):
+    jobId: str
+    phase: int
+    step: int
+    maxSteps: int
+    loss: float
+    lr: float
+    status: str
+
+
+class AvailableModelsResponse(BaseModel):
+    models: list[dict]
+
 
 router = APIRouter()
 
@@ -32,7 +66,6 @@ def _job_to_response(job) -> TrainJobResponse:
 
 
 def _run_training(job_id: str, job_type: str, user_config: dict, db_url: str):
-    """在后台线程中同步执行 PyTorch 训练，完成后更新 DB 状态。"""
     import asyncio
     from app.model.trainer import TriTransformerTrainer, TrainerConfig
     from app.model.tri_transformer import TriTransformerConfig
@@ -67,7 +100,6 @@ def _run_training(job_id: str, job_type: str, user_config: dict, db_url: str):
         sm = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
         try:
             async with sm() as session:
-                from sqlalchemy import select
                 result = await session.execute(
                     select(TrainJob).where(TrainJob.id == job_id)
                 )
@@ -134,6 +166,79 @@ async def list_jobs(
     svc = TrainService(db)
     jobs = await svc.list_jobs(user_id=current_user.id)
     return [_job_to_response(j) for j in jobs]
+
+
+@router.post("/jobs/start", status_code=202)
+async def start_job(
+    payload: TrainingStartRequest,
+    background_tasks: BackgroundTasks,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    config = {
+        "i_model_id": payload.i_model_id,
+        "o_model_id": payload.o_model_id,
+        "learning_rate": payload.learning_rate,
+        "batch_size": payload.batch_size,
+        "max_steps": payload.max_steps,
+        "phase": payload.phase,
+        "num_epochs": max(1, payload.max_steps // 100),
+    }
+    svc = TrainService(db)
+    job = await svc.submit_job(
+        user_id=current_user.id,
+        job_type="lora_finetune",
+        config=config,
+    )
+    background_tasks.add_task(
+        _run_training,
+        job_id=job.id,
+        job_type=job.job_type,
+        user_config=config,
+        db_url=settings.database_url,
+    )
+    return {"jobId": job.id}
+
+
+@router.get("/jobs/progress", response_model=TrainingProgressResponse)
+async def get_jobs_progress(
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    result = await db.execute(
+        select(TrainJob)
+        .where(TrainJob.user_id == current_user.id)
+        .order_by(TrainJob.created_at.desc())
+        .limit(1)
+    )
+    job = result.scalar_one_or_none()
+
+    if job is None:
+        return TrainingProgressResponse(
+            jobId="", phase=0, step=0, maxSteps=0, loss=0.0, lr=0.0, status="idle"
+        )
+
+    cfg = json.loads(job.config) if job.config else {}
+    metrics = cfg.get("metrics", [])
+    last_metric = metrics[-1] if metrics else {}
+    max_steps = cfg.get("max_steps", cfg.get("num_epochs", 1) * 100)
+
+    return TrainingProgressResponse(
+        jobId=job.id,
+        phase=cfg.get("phase", 0),
+        step=len(metrics) * 100,
+        maxSteps=max_steps,
+        loss=float(last_metric.get("loss", 0.0)),
+        lr=float(cfg.get("learning_rate", 1e-4)),
+        status=job.status,
+    )
+
+
+@router.get("/jobs/models", response_model=AvailableModelsResponse)
+async def get_available_models(
+    current_user: Annotated[User, Depends(get_current_user)],
+):
+    return AvailableModelsResponse(models=_AVAILABLE_MODELS)
 
 
 @router.get("/jobs/{job_id}", response_model=TrainJobResponse)

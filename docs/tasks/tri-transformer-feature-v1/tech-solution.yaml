@@ -1,0 +1,123 @@
+task_id: tri-transformer-feature-v1
+title: Metrics/Training API补全 + Chat字段对齐 + 幻觉检测展示
+platform: Backend+Web
+mode: standard
+
+design_decisions:
+  - id: DD1
+    decision: metrics 历史数据从 TrainJob.config["metrics"] 聚合，不引入独立 metrics 表
+    reason: 训练过程已将 epoch metrics 写入 TrainJob.config，零成本复用
+  - id: DD2
+    decision: /training/status 查询最近一个非 pending job，无则返回 idle
+    reason: 避免 404，前端可优雅降级
+  - id: DD3
+    decision: /jobs/models 返回静态预设列表（4 个模型）
+    reason: 无外部模型注册表，静态列表足以支撑 TrainingPage 下拉选项
+  - id: DD4
+    decision: 前端 trainingConfig.ts 路径对齐，不修改后端路由结构
+    reason: 后端 /train/jobs 已有完整实现，前端改路径成本最低
+  - id: DD5
+    decision: Message.hallucinationDetected 设为可选（?: boolean）
+    reason: 用户发送的消息无此字段，不破坏已有 user message 渲染
+
+file_changes:
+  # ---- 后端新增 ----
+  - path: backend/app/api/v1/metrics.py
+    action: create
+    desc: >
+      GET /metrics → 聚合所有 completed job 的 config["metrics"] 生成 history，
+        current 取最新一条数据；无历史时返回零值
+      GET /training/status → 查询最新 running/pending job，
+        返回 {phase, progress, eta, message}；无则返回 idle 状态
+      均需 JWT 认证
+
+  - path: backend/app/api/v1/train.py
+    action: modify
+    desc: >
+      新增三个路由（避免与已有 /jobs 冲突，放在 /jobs/ 子路径）：
+      POST /jobs/start → 与 POST /jobs 相同逻辑，返回 {jobId: str}
+      GET  /jobs/progress → 查询最新 running job 进度，返回 TrainingProgress
+      GET  /jobs/models → 返回静态 {models: [{id,name,type}]}
+
+  - path: backend/app/main.py
+    action: modify
+    desc: 新增 metrics router import 和 include_router("/api/v1/metrics")
+
+  # ---- 后端新增测试 ----
+  - path: backend/tests/test_metrics.py
+    action: create
+    desc: 覆盖 GET /metrics, GET /training/status 的正常返回和 401 场景
+
+  # ---- 前端修改 ----
+  - path: frontend/src/api/conversations.ts
+    action: modify
+    desc: >
+      sendMessageApi 将后端 {message_id, role, content, sources, hallucination_detected, created_at}
+      映射为前端 Message 类型 {id, role, content, sources, hallucinationDetected, createdAt}
+
+  - path: frontend/src/api/trainingConfig.ts
+    action: modify
+    desc: >
+      startTrainingApi: POST /training/start → POST /train/jobs/start
+      getTrainingProgressApi: GET /training/progress → GET /train/jobs/progress
+      getAvailableModelsApi: GET /models/available → GET /train/jobs/models
+
+  - path: frontend/src/types/api.ts
+    action: modify
+    desc: Message 新增 hallucinationDetected?: boolean 可选字段
+
+  - path: frontend/src/components/chat/MessageBubble.tsx
+    action: modify
+    desc: 助手消息在 hallucinationDetected===true 时渲染橙色 "⚠ 检测到幻觉" 标签（Ant Design Tag）
+
+  # ---- 前端 mock/测试更新 ----
+  - path: frontend/src/mocks/handlers/trainingConfig.ts
+    action: modify
+    desc: 路径改为 /api/v1/train/jobs/start, /api/v1/train/jobs/progress, /api/v1/train/jobs/models
+
+  - path: frontend/src/mocks/__tests__/handlers.test.ts
+    action: modify
+    desc: TrainingConfig handlers 测试更新路径
+
+  - path: frontend/src/store/__tests__/trainingConfigStore.test.ts
+    action: modify
+    desc: MSW mock URL 路径更新
+
+interfaces:
+  MetricsResponse:
+    current:
+      retrievalAccuracy: float
+      bleuScore: float
+      hallucinationRate: float
+    history:
+      - timestamp: str
+        retrievalAccuracy: float
+        bleuScore: float
+        hallucinationRate: float
+  TrainingStatusResponse:
+    phase: str
+    progress: int
+    eta: str
+    message: str
+  TrainingJobStart:
+    request: "{job_type: str, config: dict}"
+    response: "{jobId: str}"
+  TrainingProgressResponse:
+    jobId: str
+    phase: int
+    step: int
+    maxSteps: int
+    loss: float
+    lr: float
+    status: str
+  AvailableModelsResponse:
+    models:
+      - id: str
+        name: str
+        type: "input|output"
+
+test_commands:
+  backend_new: cd backend && .venv/bin/pytest tests/test_metrics.py tests/test_train.py -v
+  backend_all: cd backend && .venv/bin/pytest tests/ -q
+  frontend: cd frontend && pnpm test --run
+  lint: cd backend && .venv/bin/flake8 app/api/v1/metrics.py app/api/v1/train.py app/main.py

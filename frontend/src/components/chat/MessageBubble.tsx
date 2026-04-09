@@ -1,6 +1,6 @@
 import React from 'react';
-import { Avatar } from 'antd';
-import { UserOutlined, RobotOutlined } from '@ant-design/icons';
+import { Avatar, Tag } from 'antd';
+import { UserOutlined, RobotOutlined, WarningOutlined } from '@ant-design/icons';
 import { SourcePanel } from './SourcePanel';
 import type { Message } from '@/types/api';
 
@@ -39,6 +39,15 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({ message }) => {
         >
           {message.content}
         </div>
+        {!isUser && message.hallucinationDetected && (
+          <Tag
+            icon={<WarningOutlined />}
+            color="warning"
+            style={{ marginTop: 6 }}
+          >
+            疑似幻觉内容
+          </Tag>
+        )}
         {!isUser && message.sources.length > 0 && (
           <SourcePanel sources={message.sources} />
         )}

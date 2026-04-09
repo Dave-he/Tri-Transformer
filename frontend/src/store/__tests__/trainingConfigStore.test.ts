@@ -3,10 +3,10 @@ import { setupServer } from 'msw/node';
 import { http, HttpResponse } from 'msw';
 
 const server = setupServer(
-  http.post('http://localhost:8000/api/v1/training/start', () =>
+  http.post('http://localhost:8002/api/v1/training/start', () =>
     HttpResponse.json({ jobId: 'test-job-1' })
   ),
-  http.get('http://localhost:8000/api/v1/training/progress', () =>
+  http.get('http://localhost:8002/api/v1/training/progress', () =>
     HttpResponse.json({
       jobId: 'test-job-1',
       phase: 0,
@@ -17,7 +17,7 @@ const server = setupServer(
       status: 'running',
     })
   ),
-  http.get('http://localhost:8000/api/v1/models/available', () =>
+  http.get('http://localhost:8002/api/v1/models/available', () =>
     HttpResponse.json({
       models: [
         { id: 'qwen2-audio', name: 'Qwen2-Audio-7B', type: 'input' },
@@ -87,7 +87,7 @@ describe('trainingConfigStore', () => {
 
   it('startTraining failure sets error state', async () => {
     server.use(
-      http.post('http://localhost:8000/api/v1/training/start', () =>
+      http.post('http://localhost:8002/api/v1/training/start', () =>
         HttpResponse.json({ detail: 'Internal error' }, { status: 500 })
       )
     );

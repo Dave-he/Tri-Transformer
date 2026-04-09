@@ -6,11 +6,11 @@ const mockDocuments = [
 ];
 
 export const documentHandlers = [
-  http.get('http://localhost:8000/api/v1/documents', () => {
+  http.get('http://localhost:8002/api/v1/documents', () => {
     return HttpResponse.json({ documents: mockDocuments });
   }),
 
-  http.post('http://localhost:8000/api/v1/documents/upload', () => {
+  http.post('http://localhost:8002/api/v1/documents/upload', () => {
     return HttpResponse.json({
       id: `doc-${Date.now()}`,
       name: 'uploaded-file.pdf',
@@ -21,11 +21,11 @@ export const documentHandlers = [
     }, { status: 201 });
   }),
 
-  http.delete('http://localhost:8000/api/v1/documents/:id', () => {
+  http.delete('http://localhost:8002/api/v1/documents/:id', () => {
     return HttpResponse.json({ message: 'Document deleted successfully' });
   }),
 
-  http.post('http://localhost:8000/api/v1/documents/search', async ({ request }) => {
+  http.post('http://localhost:8002/api/v1/documents/search', async ({ request }) => {
     const body = await request.json() as { query: string; topK?: number };
     const topK = body.topK ?? 10;
     return HttpResponse.json({

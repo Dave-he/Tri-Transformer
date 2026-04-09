@@ -8,7 +8,7 @@ const historyPoints = Array.from({ length: 10 }, (_, i) => ({
 }));
 
 export const trainingHandlers = [
-  http.get('http://localhost:8000/api/v1/training/status', () => {
+  http.get('http://localhost:8002/api/v1/training/status', () => {
     return HttpResponse.json({
       phase: 'Stage 2: C-Transformer Training',
       progress: 45,
@@ -17,7 +17,7 @@ export const trainingHandlers = [
     });
   }),
 
-  http.get('http://localhost:8000/api/v1/metrics', () => {
+  http.get('http://localhost:8002/api/v1/metrics', () => {
     return HttpResponse.json({
       current: {
         retrievalAccuracy: 0.92,

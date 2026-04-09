@@ -1,0 +1,102 @@
+task_id: tri-transformer-integration-v1
+mode: standard
+
+tasks:
+  - id: T1
+    type: test
+    title: "[RED] 后端 test_webrtc.py - POST /webrtc/offer 返回 SDP answer"
+    file: backend/tests/test_webrtc.py
+    test:
+      command: "cd backend && .venv/bin/pytest tests/test_webrtc.py::test_webrtc_offer -v"
+      expect: FAIL (文件不存在)
+    depends_on: []
+
+  - id: T2
+    type: test
+    title: "[RED] 后端 test_webrtc.py - POST /webrtc/candidate 返回 ok"
+    file: backend/tests/test_webrtc.py
+    test:
+      command: "cd backend && .venv/bin/pytest tests/test_webrtc.py::test_webrtc_candidate -v"
+      expect: FAIL
+    depends_on: []
+
+  - id: T3
+    type: test
+    title: "[RED] 后端 test_webrtc.py - POST /webrtc/interrupt 返回 ok"
+    file: backend/tests/test_webrtc.py
+    test:
+      command: "cd backend && .venv/bin/pytest tests/test_webrtc.py::test_webrtc_interrupt -v"
+      expect: FAIL
+    depends_on: []
+
+  - id: T4
+    type: test
+    title: "[RED] 后端 test_webrtc.py - 无 token 时 401"
+    file: backend/tests/test_webrtc.py
+    test:
+      command: "cd backend && .venv/bin/pytest tests/test_webrtc.py::test_webrtc_offer_no_auth -v"
+      expect: FAIL
+    depends_on: []
+
+  - id: T5
+    type: code
+    title: "[GREEN] 新建 webrtc_service.py"
+    file: backend/app/services/model/webrtc_service.py
+    test:
+      command: "cd backend && .venv/bin/pytest tests/test_webrtc.py -v"
+      expect: FAIL (router 未注册)
+    depends_on: [T1, T2, T3, T4]
+
+  - id: T6
+    type: code
+    title: "[GREEN] 新建 backend/app/api/v1/webrtc.py"
+    file: backend/app/api/v1/webrtc.py
+    test:
+      command: "cd backend && .venv/bin/pytest tests/test_webrtc.py -v"
+      expect: FAIL (main.py 未注册)
+    depends_on: [T5]
+
+  - id: T7
+    type: code
+    title: "[GREEN] 修改 main.py 注册 webrtc router"
+    file: backend/app/main.py
+    test:
+      command: "cd backend && .venv/bin/pytest tests/test_webrtc.py -v"
+      expect: PASS
+    depends_on: [T6]
+
+  - id: T8
+    type: code
+    title: "[GREEN] 修改前端 conversations.ts 路径对齐"
+    file: frontend/src/api/conversations.ts
+    test:
+      command: "cd frontend && pnpm test --run src/api/__tests__"
+      expect: PASS
+    depends_on: []
+
+  - id: T9
+    type: code
+    title: "[GREEN] 更新前端 MSW mock handlers URL"
+    files:
+      - frontend/src/mocks/handlers/conversations.ts
+      - frontend/src/mocks/handlers/webrtc.ts
+    test:
+      command: "cd frontend && pnpm test --run"
+      expect: PASS
+    depends_on: [T8]
+
+  - id: T10
+    type: test
+    title: "[VERIFY] 后端全量测试"
+    test:
+      command: "cd backend && .venv/bin/pytest tests/ -q"
+      expect: PASS (>=185 passed)
+    depends_on: [T7, T9]
+
+  - id: T11
+    type: test
+    title: "[VERIFY] flake8 增量检查"
+    test:
+      command: "cd backend && .venv/bin/flake8 app/api/v1/webrtc.py app/services/model/webrtc_service.py app/main.py"
+      expect: no output (0 errors)
+    depends_on: [T7]

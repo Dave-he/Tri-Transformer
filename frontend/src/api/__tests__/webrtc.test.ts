@@ -4,13 +4,13 @@ import { http, HttpResponse } from 'msw';
 import { sendOffer, sendCandidate, sendInterrupt } from '../webrtc';
 
 const server = setupServer(
-  http.post('http://localhost:8000/api/v1/webrtc/offer', () => {
+  http.post('http://localhost:8002/api/v1/webrtc/offer', () => {
     return HttpResponse.json({ sdp: 'answer_sdp', type: 'answer' });
   }),
-  http.post('http://localhost:8000/api/v1/webrtc/candidate', () => {
+  http.post('http://localhost:8002/api/v1/webrtc/candidate', () => {
     return HttpResponse.json({ ok: true });
   }),
-  http.post('http://localhost:8000/api/v1/webrtc/interrupt', () => {
+  http.post('http://localhost:8002/api/v1/webrtc/interrupt', () => {
     return HttpResponse.json({ ok: true });
   })
 );

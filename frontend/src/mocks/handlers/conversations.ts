@@ -6,11 +6,11 @@ const mockConversations = [
 ];
 
 export const conversationHandlers = [
-  http.get('http://localhost:8000/api/v1/conversations', () => {
+  http.get('http://localhost:8002/api/v1/chat/sessions', () => {
     return HttpResponse.json({ conversations: mockConversations });
   }),
 
-  http.post('http://localhost:8000/api/v1/conversations', async ({ request }) => {
+  http.post('http://localhost:8002/api/v1/chat/sessions', async ({ request }) => {
     const body = await request.json() as { title?: string };
     return HttpResponse.json({
       id: `conv-${Date.now()}`,
@@ -20,7 +20,7 @@ export const conversationHandlers = [
     }, { status: 201 });
   }),
 
-  http.get('http://localhost:8000/api/v1/conversations/:id/messages', ({ params }) => {
+  http.get('http://localhost:8002/api/v1/chat/sessions/:id/history', ({ params }) => {
     return HttpResponse.json({
       messages: [
         {
@@ -41,7 +41,7 @@ export const conversationHandlers = [
     });
   }),
 
-  http.post('http://localhost:8000/api/v1/conversations/:id/messages', async ({ request }) => {
+  http.post('http://localhost:8002/api/v1/chat/sessions/:id/messages', async ({ request }) => {
     const body = await request.json() as { content: string };
     return HttpResponse.json({
       message: {

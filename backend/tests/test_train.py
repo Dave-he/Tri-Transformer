@@ -92,3 +92,46 @@ async def test_list_jobs(client, auth_headers):
     response = await client.get("/api/v1/train/jobs", headers=auth_headers)
     assert response.status_code == 200
     assert isinstance(response.json(), list)
+
+
+@pytest.mark.asyncio
+async def test_jobs_start(client, auth_headers):
+    response = await client.post(
+        "/api/v1/train/jobs/start",
+        headers=auth_headers,
+        json={
+            "i_model_id": "qwen2-audio",
+            "o_model_id": "llama3-8b",
+            "learning_rate": 1e-4,
+            "batch_size": 8,
+            "max_steps": 100,
+            "phase": 0,
+        },
+    )
+    assert response.status_code == 202
+    data = response.json()
+    assert "jobId" in data
+    assert isinstance(data["jobId"], str)
+
+
+@pytest.mark.asyncio
+async def test_jobs_progress(client, auth_headers):
+    response = await client.get("/api/v1/train/jobs/progress", headers=auth_headers)
+    assert response.status_code == 200
+    data = response.json()
+    assert "status" in data
+    assert data["status"] in ["idle", "running", "completed", "failed", "pending"]
+
+
+@pytest.mark.asyncio
+async def test_jobs_models(client, auth_headers):
+    response = await client.get("/api/v1/train/jobs/models", headers=auth_headers)
+    assert response.status_code == 200
+    data = response.json()
+    assert "models" in data
+    assert isinstance(data["models"], list)
+    assert len(data["models"]) > 0
+    model = data["models"][0]
+    assert "id" in model
+    assert "name" in model
+    assert "type" in model

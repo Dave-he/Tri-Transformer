@@ -1,23 +1,23 @@
 import { http, HttpResponse } from 'msw';
 
 export const trainingConfigHandlers = [
-  http.post('http://localhost:8000/api/v1/training/start', () => {
+  http.post('http://localhost:8002/api/v1/train/jobs/start', () => {
     return HttpResponse.json({ jobId: 'test-job-1' });
   }),
 
-  http.get('http://localhost:8000/api/v1/training/progress', () => {
+  http.get('http://localhost:8002/api/v1/train/jobs/progress', () => {
     return HttpResponse.json({
+      status: 'running',
       jobId: 'test-job-1',
       phase: 0,
       step: 100,
       maxSteps: 1000,
       loss: 2.5,
       lr: 1e-4,
-      status: 'running',
     });
   }),
 
-  http.get('http://localhost:8000/api/v1/models/available', () => {
+  http.get('http://localhost:8002/api/v1/train/jobs/models', () => {
     return HttpResponse.json({
       models: [
         { id: 'qwen2-audio', name: 'Qwen2-Audio-7B', type: 'input' },

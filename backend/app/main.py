@@ -1,3 +1,5 @@
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from slowapi import Limiter, _rate_limit_exceeded_handler
@@ -5,7 +7,7 @@ from slowapi.errors import RateLimitExceeded
 from slowapi.util import get_remote_address
 from starlette.middleware.base import BaseHTTPMiddleware
 
-from app.api.v1 import auth, knowledge, chat, model, train, stream
+from app.api.v1 import auth, knowledge, chat, model, train, stream, webrtc, metrics
 from app.core.database import create_tables
 from app.core.config import settings
 from app.core.logging import request_logging_middleware
@@ -21,10 +23,17 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         return response
 
 
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    await create_tables()
+    yield
+
+
 app = FastAPI(
     title="Tri-Transformer RAG Backend",
     description="Tri-Transformer 可控对话与 RAG 知识库增强系统后端服务",
     version="1.0.0",
+    lifespan=lifespan,
 )
 
 limiter = Limiter(key_func=get_remote_address)
@@ -49,11 +58,8 @@ app.include_router(chat.router, prefix="/api/v1/chat", tags=["chat"])
 app.include_router(model.router, prefix="/api/v1/model", tags=["model"])
 app.include_router(train.router, prefix="/api/v1/train", tags=["train"])
 app.include_router(stream.router, prefix="/api/v1/model", tags=["stream"])
-
-
-@app.on_event("startup")
-async def startup():
-    await create_tables()
+app.include_router(webrtc.router, prefix="/api/v1/webrtc", tags=["webrtc"])
+app.include_router(metrics.router, prefix="/api/v1", tags=["metrics"])
 
 
 @app.get("/health")

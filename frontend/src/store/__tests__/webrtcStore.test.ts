@@ -3,13 +3,13 @@ import { setupServer } from 'msw/node';
 import { http, HttpResponse } from 'msw';
 
 const server = setupServer(
-  http.post('http://localhost:8000/api/v1/webrtc/offer', () =>
+  http.post('http://localhost:8002/api/v1/webrtc/offer', () =>
     HttpResponse.json({ sdp: 'answer_sdp', type: 'answer' })
   ),
-  http.post('http://localhost:8000/api/v1/webrtc/candidate', () =>
+  http.post('http://localhost:8002/api/v1/webrtc/candidate', () =>
     HttpResponse.json({ ok: true })
   ),
-  http.post('http://localhost:8000/api/v1/webrtc/interrupt', () =>
+  http.post('http://localhost:8002/api/v1/webrtc/interrupt', () =>
     HttpResponse.json({ ok: true })
   )
 );

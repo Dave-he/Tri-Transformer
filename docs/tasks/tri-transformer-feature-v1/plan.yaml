@@ -1,0 +1,152 @@
+task_id: tri-transformer-feature-v1
+mode: standard
+
+tasks:
+  # ======= RED: 后端测试 =======
+  - id: T1
+    type: test
+    title: "[RED] test_metrics.py - GET /metrics 正常返回"
+    file: backend/tests/test_metrics.py
+    test:
+      command: "cd backend && .venv/bin/pytest tests/test_metrics.py::test_get_metrics -v"
+      expect: FAIL
+    depends_on: []
+
+  - id: T2
+    type: test
+    title: "[RED] test_metrics.py - GET /training/status 正常返回"
+    file: backend/tests/test_metrics.py
+    test:
+      command: "cd backend && .venv/bin/pytest tests/test_metrics.py::test_get_training_status -v"
+      expect: FAIL
+    depends_on: []
+
+  - id: T3
+    type: test
+    title: "[RED] test_metrics.py - 无认证时 401"
+    file: backend/tests/test_metrics.py
+    test:
+      command: "cd backend && .venv/bin/pytest tests/test_metrics.py::test_metrics_no_auth -v"
+      expect: FAIL
+    depends_on: []
+
+  - id: T4
+    type: test
+    title: "[RED] test_train.py - POST /jobs/start 返回 jobId"
+    file: backend/tests/test_train.py
+    test:
+      command: "cd backend && .venv/bin/pytest tests/test_train.py::test_jobs_start -v"
+      expect: FAIL
+    depends_on: []
+
+  - id: T5
+    type: test
+    title: "[RED] test_train.py - GET /jobs/progress 返回进度"
+    file: backend/tests/test_train.py
+    test:
+      command: "cd backend && .venv/bin/pytest tests/test_train.py::test_jobs_progress -v"
+      expect: FAIL
+    depends_on: []
+
+  - id: T6
+    type: test
+    title: "[RED] test_train.py - GET /jobs/models 返回模型列表"
+    file: backend/tests/test_train.py
+    test:
+      command: "cd backend && .venv/bin/pytest tests/test_train.py::test_jobs_models -v"
+      expect: FAIL
+    depends_on: []
+
+  # ======= GREEN: 后端实现 =======
+  - id: T7
+    type: code
+    title: "[GREEN] 新建 metrics.py（GET /metrics, GET /training/status）"
+    file: backend/app/api/v1/metrics.py
+    test:
+      command: "cd backend && .venv/bin/pytest tests/test_metrics.py -v"
+      expect: FAIL (router未注册)
+    depends_on: [T1, T2, T3]
+
+  - id: T8
+    type: code
+    title: "[GREEN] train.py 新增 /jobs/start, /jobs/progress, /jobs/models"
+    file: backend/app/api/v1/train.py
+    test:
+      command: "cd backend && .venv/bin/pytest tests/test_train.py -v"
+      expect: PASS
+    depends_on: [T4, T5, T6]
+
+  - id: T9
+    type: code
+    title: "[GREEN] main.py 注册 metrics router"
+    file: backend/app/main.py
+    test:
+      command: "cd backend && .venv/bin/pytest tests/test_metrics.py -v"
+      expect: PASS
+    depends_on: [T7]
+
+  # ======= GREEN: 前端修改 =======
+  - id: T10
+    type: code
+    title: "[GREEN] conversations.ts 字段映射（message_id→id, hallucination_detected→hallucinationDetected）"
+    file: frontend/src/api/conversations.ts
+    test:
+      command: "cd frontend && pnpm test --run src/store/__tests__/conversationStore.test.ts"
+      expect: PASS
+    depends_on: []
+
+  - id: T11
+    type: code
+    title: "[GREEN] types/api.ts 新增 Message.hallucinationDetected 可选字段"
+    file: frontend/src/types/api.ts
+    test:
+      command: "cd frontend && pnpm test --run src/types/__tests__/api.test.ts"
+      expect: PASS
+    depends_on: [T10]
+
+  - id: T12
+    type: code
+    title: "[GREEN] MessageBubble.tsx 展示幻觉检测 Tag"
+    file: frontend/src/components/chat/MessageBubble.tsx
+    test:
+      command: "cd frontend && pnpm test --run src/components/chat/__tests__/MessageBubble.test.tsx"
+      expect: PASS
+    depends_on: [T11]
+
+  - id: T13
+    type: code
+    title: "[GREEN] trainingConfig.ts 路径对齐 + mock/test 更新"
+    files:
+      - frontend/src/api/trainingConfig.ts
+      - frontend/src/mocks/handlers/trainingConfig.ts
+      - frontend/src/mocks/__tests__/handlers.test.ts
+      - frontend/src/store/__tests__/trainingConfigStore.test.ts
+    test:
+      command: "cd frontend && pnpm test --run src/store/__tests__/trainingConfigStore.test.ts"
+      expect: PASS
+    depends_on: []
+
+  # ======= VERIFY =======
+  - id: T14
+    type: test
+    title: "[VERIFY] 后端全量 pytest"
+    test:
+      command: "cd backend && .venv/bin/pytest tests/ -q"
+      expect: PASS (>=191 passed)
+    depends_on: [T9, T8]
+
+  - id: T15
+    type: test
+    title: "[VERIFY] 前端全量 vitest"
+    test:
+      command: "cd frontend && pnpm test --run"
+      expect: PASS (115 passed)
+    depends_on: [T13, T12]
+
+  - id: T16
+    type: test
+    title: "[VERIFY] flake8 增量"
+    test:
+      command: "cd backend && .venv/bin/flake8 app/api/v1/metrics.py app/api/v1/train.py app/main.py"
+      expect: no output
+    depends_on: [T9, T8]

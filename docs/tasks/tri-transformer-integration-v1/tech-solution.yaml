@@ -1,0 +1,95 @@
+task_id: tri-transformer-integration-v1
+title: 前后端API集成对齐 + WebRTC信令后端
+platform: Backend+Web
+mode: standard
+
+design_decisions:
+  - id: DD1
+    decision: 修改前端 conversations.ts 路径，对齐后端已有路由
+    reason: >
+      后端 /chat/sessions 已有完整实现，前端改路径成本最低，
+      避免重构后端路由影响已通过的185个测试。
+  - id: DD2
+    decision: WebRTC 后端返回 echo/mock SDP answer，不引入 aiortc
+    reason: >
+      aiortc 依赖复杂（需要 libav），本期目标是让信令接口可用，
+      真实媒体协商作为独立需求后续处理。
+
+file_changes:
+  # ---- 前端修改 ----
+  - path: frontend/src/api/conversations.ts
+    action: modify
+    desc: >
+      GET /conversations → /chat/sessions
+      POST /conversations → /chat/sessions
+      GET /conversations/:id/messages → /chat/sessions/:id/history
+      POST /conversations/:id/messages → /chat/sessions/:id/messages
+      响应字段对齐：前端 Conversation.id 对应后端 CreateSessionResponse.id
+
+  - path: frontend/src/mocks/handlers/conversations.ts
+    action: modify
+    desc: >
+      URL 从 http://localhost:8000 改为 http://localhost:8002，
+      路径改为 /api/v1/chat/sessions*，
+      GET sessions/:id/history（而非/messages）
+
+  - path: frontend/src/mocks/handlers/webrtc.ts
+    action: modify
+    desc: >
+      URL 从 http://localhost:8000 改为 http://localhost:8002，
+      路径改为 /api/v1/webrtc/*
+
+  # ---- 后端新增 ----
+  - path: backend/app/api/v1/webrtc.py
+    action: create
+    desc: >
+      三个端点：
+      POST /offer  → WebRTCService.handle_offer(sdp, type) → {sdp, type:"answer"}
+      POST /candidate → WebRTCService.handle_candidate(...) → {ok:true}
+      POST /interrupt → WebRTCService.handle_interrupt() → {ok:true}
+      全部需要 JWT 认证（Depends(get_current_user)）
+
+  - path: backend/app/services/model/webrtc_service.py
+    action: create
+    desc: >
+      WebRTCService 类：
+      handle_offer: 接受 SDP offer，生成 echo SDP answer（sdp=offer.sdp, type="answer"）
+      handle_candidate: 接受 candidate，返回 ok=True
+      handle_interrupt: 设置中断标志，返回 ok=True
+
+  - path: backend/app/main.py
+    action: modify
+    desc: 新增 webrtc router import 和 include_router
+
+  # ---- 后端新增测试 ----
+  - path: backend/tests/test_webrtc.py
+    action: create
+    desc: >
+      测试 POST /api/v1/webrtc/offer, /candidate, /interrupt
+      含：401 无 token、200 正常返回、字段校验
+
+  # ---- 前端测试更新 ----
+  - path: frontend/src/api/__tests__/conversations.test.ts (若存在)
+    action: modify
+    desc: 更新 mock URL 和路径断言
+
+interfaces:
+  webrtc_offer_request:
+    sdp: str
+    type: Literal["offer"]
+  webrtc_offer_response:
+    sdp: str
+    type: Literal["answer"]
+  webrtc_candidate_request:
+    candidate: str
+    sdpMid: Optional[str]
+    sdpMLineIndex: Optional[int]
+  webrtc_candidate_response:
+    ok: Literal[True]
+  webrtc_interrupt_response:
+    ok: Literal[True]
+
+test_commands:
+  backend: cd backend && .venv/bin/pytest tests/test_webrtc.py tests/test_chat.py -v
+  frontend: cd frontend && pnpm test --run
+  lint: cd backend && .venv/bin/flake8 app/api/v1/webrtc.py app/services/model/webrtc_service.py app/main.py

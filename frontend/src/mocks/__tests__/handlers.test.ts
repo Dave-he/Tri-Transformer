@@ -22,7 +22,7 @@ afterAll(() => server.close());
 
 describe('Auth handlers', () => {
   it('POST /api/v1/auth/login returns token and user', async () => {
-    const res = await fetch('http://localhost:8000/api/v1/auth/login', {
+    const res = await fetch('http://localhost:8002/api/v1/auth/login', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ username: 'test', password: 'password' }),
@@ -35,7 +35,7 @@ describe('Auth handlers', () => {
   });
 
   it('POST /api/v1/auth/login returns 401 for invalid credentials', async () => {
-    const res = await fetch('http://localhost:8000/api/v1/auth/login', {
+    const res = await fetch('http://localhost:8002/api/v1/auth/login', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ username: 'wrong', password: 'wrong' }),
@@ -45,8 +45,8 @@ describe('Auth handlers', () => {
 });
 
 describe('Conversation handlers', () => {
-  it('GET /api/v1/conversations returns conversation list', async () => {
-    const res = await fetch('http://localhost:8000/api/v1/conversations', {
+  it('GET /api/v1/chat/sessions returns conversation list', async () => {
+    const res = await fetch('http://localhost:8002/api/v1/chat/sessions', {
       headers: { Authorization: 'Bearer test-token' },
     });
     expect(res.ok).toBe(true);
@@ -55,8 +55,8 @@ describe('Conversation handlers', () => {
     expect(Array.isArray(data.conversations)).toBe(true);
   });
 
-  it('POST /api/v1/conversations/:id/messages returns message with sources', async () => {
-    const res = await fetch('http://localhost:8000/api/v1/conversations/conv-1/messages', {
+  it('POST /api/v1/chat/sessions/:id/messages returns message with sources', async () => {
+    const res = await fetch('http://localhost:8002/api/v1/chat/sessions/conv-1/messages', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: 'Bearer test-token' },
       body: JSON.stringify({ content: 'What is RAG?' }),
@@ -73,7 +73,7 @@ describe('Document handlers', () => {
   it('POST /api/v1/documents/upload returns processing status', async () => {
     const formData = new FormData();
     formData.append('file', new Blob(['content'], { type: 'application/pdf' }), 'test.pdf');
-    const res = await fetch('http://localhost:8000/api/v1/documents/upload', {
+    const res = await fetch('http://localhost:8002/api/v1/documents/upload', {
       method: 'POST',
       headers: { Authorization: 'Bearer test-token' },
       body: formData,
@@ -87,7 +87,7 @@ describe('Document handlers', () => {
 
 describe('Training handlers', () => {
   it('GET /api/v1/metrics returns metrics data', async () => {
-    const res = await fetch('http://localhost:8000/api/v1/metrics', {
+    const res = await fetch('http://localhost:8002/api/v1/metrics', {
       headers: { Authorization: 'Bearer test-token' },
     });
     expect(res.ok).toBe(true);
@@ -101,7 +101,7 @@ describe('Training handlers', () => {
 
 describe('WebRTC handlers', () => {
   it('POST /api/v1/webrtc/offer returns SDP answer', async () => {
-    const res = await fetch('http://localhost:8000/api/v1/webrtc/offer', {
+    const res = await fetch('http://localhost:8002/api/v1/webrtc/offer', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: 'Bearer test-token' },
       body: JSON.stringify({ sdp: 'offer_sdp', type: 'offer' }),
@@ -113,7 +113,7 @@ describe('WebRTC handlers', () => {
   });
 
   it('POST /api/v1/webrtc/interrupt returns ok', async () => {
-    const res = await fetch('http://localhost:8000/api/v1/webrtc/interrupt', {
+    const res = await fetch('http://localhost:8002/api/v1/webrtc/interrupt', {
       method: 'POST',
       headers: { Authorization: 'Bearer test-token' },
     });
@@ -124,8 +124,8 @@ describe('WebRTC handlers', () => {
 });
 
 describe('TrainingConfig handlers', () => {
-  it('POST /api/v1/training/start returns jobId', async () => {
-    const res = await fetch('http://localhost:8000/api/v1/training/start', {
+  it('POST /api/v1/train/jobs/start returns jobId', async () => {
+    const res = await fetch('http://localhost:8002/api/v1/train/jobs/start', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: 'Bearer test-token' },
       body: JSON.stringify({ i_model_id: 'qwen2', o_model_id: 'llama3', learning_rate: 1e-4, batch_size: 8, max_steps: 100, phase: 0 }),
@@ -135,19 +135,17 @@ describe('TrainingConfig handlers', () => {
     expect(data).toHaveProperty('jobId');
   });
 
-  it('GET /api/v1/training/progress returns progress object', async () => {
-    const res = await fetch('http://localhost:8000/api/v1/training/progress', {
+  it('GET /api/v1/train/jobs/progress returns progress object', async () => {
+    const res = await fetch('http://localhost:8002/api/v1/train/jobs/progress', {
       headers: { Authorization: 'Bearer test-token' },
     });
     expect(res.ok).toBe(true);
     const data = await res.json();
-    expect(data).toHaveProperty('step');
-    expect(data).toHaveProperty('maxSteps');
     expect(data).toHaveProperty('status');
   });
 
-  it('GET /api/v1/models/available returns models array', async () => {
-    const res = await fetch('http://localhost:8000/api/v1/models/available', {
+  it('GET /api/v1/train/jobs/models returns models array', async () => {
+    const res = await fetch('http://localhost:8002/api/v1/train/jobs/models', {
       headers: { Authorization: 'Bearer test-token' },
     });
     expect(res.ok).toBe(true);

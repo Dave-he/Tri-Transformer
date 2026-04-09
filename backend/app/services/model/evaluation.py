@@ -125,11 +125,12 @@ class HallucinationEvaluator:
         )
         
         max_sim_per_token = sim_matrix.max(dim=1)[0]
-        knowledge_grounding = max_sim_per_token.mean().item()
-        
-        context_sim = F.cosine_similarity(generated_content_flat, context, dim=-1)
-        fact_consistency = context_sim.mean().item()
-        
+        knowledge_grounding = ((max_sim_per_token + 1.0) / 2.0).mean().item()
+
+        context_expanded = context.unsqueeze(1).expand(B, T, D).reshape(B * T, D)
+        context_sim = F.cosine_similarity(generated_content_flat, context_expanded, dim=-1)
+        fact_consistency = ((context_sim + 1.0) / 2.0).mean().item()
+
         contradiction_rate = (max_sim_per_token < self.similarity_threshold).float().mean().item()
         
         return {

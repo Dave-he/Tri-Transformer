@@ -23,6 +23,7 @@ export interface Message {
   readonly content: string;
   readonly sources: MessageSource[];
   readonly createdAt: string;
+  readonly hallucinationDetected?: boolean;
 }
 
 export type DocumentStatus = 'processing' | 'ready' | 'failed';

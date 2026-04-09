@@ -1,0 +1,49 @@
+task_id: frontier-research-prd
+version: "1.0"
+created_at: "2026-04-13"
+
+requirement:
+  title: "收集最新前沿论文和知识，更新 Tri-Transformer PRD"
+  source: "用户指令：ai-flow 收集最新的前沿相关论文和知识，形成PRD"
+  platform: "docs"
+  priority: "high"
+
+background:
+  project: "Tri-Transformer 实时多模态可控对话与 RAG 知识库增强系统"
+  current_prd_version: "v2.0"
+  gap: "现有 PRD 中引用的文献最新到 2025 年 4 月，需补充 2024-2026 最新前沿研究成果并更新产品需求"
+
+scope:
+  in_scope:
+    - "搜集 8 大方向的最新前沿论文（2024-2026）"
+    - "整理论文与 Tri-Transformer 的关联性映射"
+    - "输出前沿论文综述文档（docs/research/frontier-papers-2025.md）"
+    - "更新 PRD 文档（docs/PRD.md）到 v3.0，融入最新研究依据"
+  out_of_scope:
+    - "代码实现"
+    - "新功能开发"
+
+acceptance_criteria:
+  - id: AC-01
+    description: "前沿论文综述文档覆盖 Transformer 架构、幻觉检测、多模态、语音、DiT、PEFT、推理加速、RAG 8 大方向"
+    priority: P0
+  - id: AC-02
+    description: "每篇论文包含：标题、来源/时间、核心贡献、与 Tri-Transformer 的关联性分析"
+    priority: P0
+  - id: AC-03
+    description: "PRD v3.0 在第 2 节（需求背景与研究依据）中补充 2024-2026 最新论文，包含不少于 10 篇"
+    priority: P0
+  - id: AC-04
+    description: "PRD v3.0 包含基于最新研究的技术演进路线图（Phase 2/3 更新）"
+    priority: P1
+  - id: AC-05
+    description: "前沿论文综述附带优先级行动建议表"
+    priority: P1
+
+deliverables:
+  - path: "docs/research/frontier-papers-2025.md"
+    type: "新建"
+    description: "前沿论文综述，包含 18 篇核心论文详情与行动建议"
+  - path: "docs/PRD.md"
+    type: "更新"
+    description: "PRD v3.0，融入最新研究成果更新背景与技术路线"

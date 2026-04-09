@@ -1,0 +1,66 @@
+task_id: tri-transformer-integration-v1
+title: 前后端API集成对齐 + WebRTC信令后端
+created_at: "2026-04-09"
+platform: Backend+Web
+priority: P0
+
+summary: >
+  当前前后端存在两处关键集成缺口：
+  1. 对话API路径不匹配（前端 /conversations，后端 /chat/sessions），导致对话功能完全无法联调。
+  2. WebRTC信令后端缺失（前端已有完整 webrtcStore + sendOffer/sendCandidate/sendInterrupt，
+     但后端无对应路由），导致音视频通话功能无法工作。
+  另外前端 mock handler 硬编码 http://localhost:8000，而客户端 baseURL 为 http://localhost:8002，
+  导致测试环境与真实环境不一致。
+
+scope:
+  in_scope:
+    - 前端conversations.ts API路径对齐：/conversations → /chat/sessions
+    - 前端getMessagesApi：/conversations/:id/messages → /chat/sessions/:id/history
+    - 后端新增 /api/v1/webrtc 路由（offer/candidate/interrupt三个端点）
+    - 后端新增 WebRTC 信令服务 webrtc_service.py
+    - 后端 main.py 注册 webrtc router
+    - 前端 MSW mock handlers 更新 URL 以匹配修改后的路径
+    - 新增后端 tests/test_webrtc.py
+    - 前端 conversations API 测试更新
+  out_of_scope:
+    - 真实 aiortc/WebRTC 媒体流处理（本期仅信令）
+    - 多模态Tokenizer真实实现（hash占位保留）
+    - StreamEngine接入真实推理（mock保留）
+    - FactChecker真实嵌入（hash占位保留）
+
+acceptance_criteria:
+  - AC1: GET /api/v1/chat/sessions 返回会话列表，前端对话列表正常加载
+  - AC2: POST /api/v1/chat/sessions 创建会话，前端新建对话成功
+  - AC3: GET /api/v1/chat/sessions/{id}/history 返回消息历史
+  - AC4: POST /api/v1/chat/sessions/{id}/messages 发送消息，返回AI回复
+  - AC5: POST /api/v1/webrtc/offer 接受 SDP offer，返回 SDP answer（mock answer）
+  - AC6: POST /api/v1/webrtc/candidate 接受 ICE candidate，返回 {ok: true}
+  - AC7: POST /api/v1/webrtc/interrupt 中断当前推理，返回 {ok: true}
+  - AC8: 所有后端测试通过（pytest），所有前端测试通过（vitest）
+  - AC9: flake8 无新增 E/F 级错误
+
+apis:
+  - method: POST
+    path: /api/v1/webrtc/offer
+    request: "{sdp: string, type: 'offer'}"
+    response: "{sdp: string, type: 'answer'}"
+    auth: Bearer JWT
+  - method: POST
+    path: /api/v1/webrtc/candidate
+    request: "{candidate: string, sdpMid: string|null, sdpMLineIndex: int|null}"
+    response: "{ok: true}"
+    auth: Bearer JWT
+  - method: POST
+    path: /api/v1/webrtc/interrupt
+    request: "{}"
+    response: "{ok: true}"
+    auth: Bearer JWT
+
+dependencies:
+  - fastapi (已有)
+  - pydantic (已有)
+  - pytest-asyncio (已有)
+
+risks:
+  - level: LOW
+    desc: WebRTC信令本期返回mock answer，真实媒体协商延后处理

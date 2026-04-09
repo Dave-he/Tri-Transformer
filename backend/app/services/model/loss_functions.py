@@ -126,22 +126,30 @@ class ControlAlignmentLoss(nn.Module):
     """
     控制信号对齐损失：确保 C-Transformer 生成的控制信号
     与期望的控制模式对齐。
-    
-    控制信号用于调节 I/O 分支的行为，包括：
-    - Thinking Mode: 是否启用深度推理
-    - Response Style: 简洁/详细
-    - Knowledge Grounding: 知识依赖程度
+
+    control_dim 设为 None（默认）时，在首次 forward 调用时
+    根据实际输入维度动态构建投影层，兼容任意 d_model 配置。
     """
-    
+
     def __init__(
         self,
-        control_dim: int = 4096,
+        control_dim: Optional[int] = None,
         num_control_modes: int = 4,
     ):
         super().__init__()
-        self.control_proj = nn.Linear(control_dim, num_control_modes)
+        self.control_dim = control_dim
+        self.num_control_modes = num_control_modes
+        self.control_proj: Optional[nn.Linear] = (
+            nn.Linear(control_dim, num_control_modes) if control_dim is not None else None
+        )
         self.ce_loss = nn.CrossEntropyLoss()
-    
+
+    def _get_proj(self, ctrl_signal: torch.Tensor) -> nn.Linear:
+        if self.control_proj is None:
+            d = ctrl_signal.shape[-1]
+            self.control_proj = nn.Linear(d, self.num_control_modes).to(ctrl_signal.device)
+        return self.control_proj
+
     def forward(
         self,
         ctrl_signal: torch.Tensor,
@@ -150,10 +158,9 @@ class ControlAlignmentLoss(nn.Module):
         """
         ctrl_signal : [B, D] C-Transformer 生成的控制信号
         target_mode : [B] 目标控制模式标签
-        
-        返回：控制模式分类损失
         """
-        mode_logits = self.control_proj(ctrl_signal)
+        proj = self._get_proj(ctrl_signal)
+        mode_logits = proj(ctrl_signal)
         return self.ce_loss(mode_logits, target_mode)
 
 
