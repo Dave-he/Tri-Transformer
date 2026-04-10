@@ -8,7 +8,8 @@ services:
     ports:
       - "3002:80"
     depends_on:
-      - backend
+      backend:
+        condition: service_healthy
     environment:
       - NODE_ENV=production
     networks:
@@ -23,13 +24,20 @@ services:
     environment:
       - VECTOR_DB_URL=http://vector_db:19530
     depends_on:
-      - vector_db
+      vector_db:
+        condition: service_started
     networks:
       - tri-transformer-net
     volumes:
       - ./data/documents:/app/data/documents
       - ./data/models:/app/data/models
       - ./backend/tritransformer.db:/app/tritransformer.db
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
 
   vector_db:
     image: milvusdb/milvus:v2.3.3

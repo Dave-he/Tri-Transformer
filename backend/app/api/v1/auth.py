@@ -1,7 +1,9 @@
 import uuid
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
+from slowapi import Limiter
+from slowapi.util import get_remote_address
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
@@ -11,6 +13,8 @@ from app.models.user import User
 from app.schemas.auth import RegisterRequest, RegisterResponse, LoginRequest, TokenResponse
 
 router = APIRouter()
+
+limiter = Limiter(key_func=get_remote_address)
 
 
 @router.post("/register", response_model=RegisterResponse, status_code=201)
@@ -39,7 +43,9 @@ async def register(
 
 
 @router.post("/login", response_model=TokenResponse)
+@limiter.limit("5/minute")
 async def login(
+    request: Request,
     payload: LoginRequest,
     db: Annotated[AsyncSession, Depends(get_db)],
 ):

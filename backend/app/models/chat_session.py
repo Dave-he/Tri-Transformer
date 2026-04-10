@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime, timezone
 
-from sqlalchemy import String, Integer, DateTime, ForeignKey, Text, Boolean
+from sqlalchemy import String, Integer, DateTime, ForeignKey, Text, Boolean, Index
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.database import Base
@@ -9,6 +9,9 @@ from app.core.database import Base
 
 class ChatSession(Base):
     __tablename__ = "chat_sessions"
+    __table_args__ = (
+        Index("idx_chat_session_user_created", "user_id", "created_at"),
+    )
 
     id: Mapped[str] = mapped_column(
         String(64), primary_key=True, default=lambda: str(uuid.uuid4())
@@ -22,6 +25,9 @@ class ChatSession(Base):
 
 class ChatMessage(Base):
     __tablename__ = "chat_messages"
+    __table_args__ = (
+        Index("idx_chat_message_session_created", "session_id", "created_at"),
+    )
 
     id: Mapped[str] = mapped_column(
         String(64), primary_key=True, default=lambda: str(uuid.uuid4())

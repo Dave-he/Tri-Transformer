@@ -2,6 +2,8 @@
 fastapi==0.115.6
 uvicorn[standard]==0.32.1
 python-multipart==0.0.19
+slowapi==0.1.9
+python-magic==0.4.27
 
 # Database
 sqlalchemy[asyncio]==2.0.36

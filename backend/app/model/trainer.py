@@ -6,7 +6,7 @@ from typing import Callable, Optional
 import torch
 import torch.nn as nn
 from torch.optim import AdamW
-from torch.optim.lr_scheduler import CosineAnnealingLR
+from torch.optim.lr_scheduler import OneCycleLR
 
 from app.model.tri_transformer import TriTransformerModel, TriTransformerConfig
 
@@ -22,6 +22,9 @@ class TrainerConfig:
     vocab_size: int = 32000
     device: str = "cpu"
     model_config: Optional[TriTransformerConfig] = None
+    gradient_accumulation_steps: int = 4
+    use_amp: bool = True
+    total_steps: Optional[int] = None
 
 
 STAGE_MAP = {
@@ -67,12 +70,23 @@ class TriTransformerTrainer:
             lr=config.learning_rate,
             weight_decay=config.weight_decay,
         )
-        self.scheduler = CosineAnnealingLR(
+
+        total_steps = config.total_steps or (config.num_epochs * 100)
+        self.scheduler = OneCycleLR(
             self.optimizer,
-            T_max=config.num_epochs,
-            eta_min=config.learning_rate * 1e-2,
+            max_lr=config.learning_rate,
+            total_steps=total_steps,
+            pct_start=0.1,
+            anneal_strategy="cos",
         )
+
         self.criterion = nn.CrossEntropyLoss(ignore_index=0)
+
+        cuda_available = config.device.startswith("cuda") and torch.cuda.is_available()
+        self._use_amp = config.use_amp and cuda_available
+        self.scaler = torch.cuda.amp.GradScaler(enabled=self._use_amp)
+        self._accum_steps = config.gradient_accumulation_steps
+        self._global_step = 0
 
     def _freeze_by_stage(self):
         for p in self.model.parameters():
@@ -101,27 +115,40 @@ class TriTransformerTrainer:
         return src, tgt_in, tgt_out
 
     def _compute_loss_and_grad_norm(
-        self, src: torch.Tensor, tgt_in: torch.Tensor, tgt_out: torch.Tensor
+        self, src: torch.Tensor, tgt_in: torch.Tensor, tgt_out: torch.Tensor,
+        is_accumulation_step: bool = False,
     ) -> tuple:
-        self.optimizer.zero_grad()
-        output = self.model(src, tgt_in)
-        logits = output.logits
-        B, T, V = logits.shape
-        loss = self.criterion(logits.reshape(B * T, V), tgt_out.reshape(B * T))
-        loss.backward()
-        grad_norm = nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=1.0).item()
-        self.optimizer.step()
-        return loss.item(), grad_norm
+        with torch.cuda.amp.autocast(enabled=self._use_amp):
+            output = self.model(src, tgt_in)
+            logits = output.logits
+            B, T, V = logits.shape
+            loss = self.criterion(logits.reshape(B * T, V), tgt_out.reshape(B * T))
+            loss = loss / self._accum_steps
+
+        self.scaler.scale(loss).backward()
+
+        grad_norm = 0.0
+        if not is_accumulation_step:
+            self.scaler.unscale_(self.optimizer)
+            grad_norm = nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=1.0).item()
+            self.scaler.step(self.optimizer)
+            self.scaler.update()
+            self.optimizer.zero_grad()
+            self.scheduler.step()
+            self._global_step += 1
+
+        return loss.item() * self._accum_steps, grad_norm
 
     def train_epoch(self, epoch: int) -> tuple:
         self.model.train()
+        self.optimizer.zero_grad()
         src, tgt_in, tgt_out = self._make_dummy_batch()
-        loss, grad_norm = self._compute_loss_and_grad_norm(src, tgt_in, tgt_out)
-        self.scheduler.step()
+        loss, grad_norm = self._compute_loss_and_grad_norm(src, tgt_in, tgt_out, is_accumulation_step=False)
         return loss, grad_norm
 
     def _train_epoch_with_loader(self, data_loader, epoch: int, max_steps: int = None) -> tuple:
         self.model.train()
+        self.optimizer.zero_grad()
         total_loss = 0.0
         total_grad_norm = 0.0
         steps = 0
@@ -137,12 +164,12 @@ class TriTransformerTrainer:
             tgt_in = tgt_in.to(self.config.device)
             tgt_out = tgt_out.to(self.config.device)
 
-            loss, grad_norm = self._compute_loss_and_grad_norm(src, tgt_in, tgt_out)
+            is_accum = ((steps + 1) % self._accum_steps != 0)
+            loss, grad_norm = self._compute_loss_and_grad_norm(src, tgt_in, tgt_out, is_accumulation_step=is_accum)
             total_loss += loss
             total_grad_norm += grad_norm
             steps += 1
 
-        self.scheduler.step()
         n = max(steps, 1)
         return total_loss / n, total_grad_norm / n
 

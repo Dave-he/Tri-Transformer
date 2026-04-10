@@ -1,4 +1,6 @@
+import os
 from typing import Optional
+from pydantic import field_validator
 from pydantic_settings import BaseSettings
 
 
@@ -7,6 +9,8 @@ class Settings(BaseSettings):
     secret_key: str = "dev-secret-key-change-in-production"
     algorithm: str = "HS256"
     access_token_expire_minutes: int = 1440
+
+    cors_origins: list[str] = ["http://localhost:3000", "http://localhost:3002"]
 
     mock_inference: bool = True
     model_path: Optional[str] = None
@@ -27,6 +31,14 @@ class Settings(BaseSettings):
     train_epochs_default: int = 3
     train_lr_default: float = 1e-4
     train_device: str = "cpu"
+
+    @field_validator("secret_key")
+    @classmethod
+    def check_secret_key(cls, v: str) -> str:
+        env = os.getenv("APP_ENV", "development")
+        if env == "production" and v == "dev-secret-key-change-in-production":
+            raise ValueError("生产环境必须通过 SECRET_KEY 环境变量设置安全密钥")
+        return v
 
     class Config:
         env_file = ".env"
