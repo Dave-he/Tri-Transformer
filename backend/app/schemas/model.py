@@ -1,14 +1,25 @@
-from pydantic import BaseModel
+from datetime import datetime
 from typing import Optional
+from pydantic import BaseModel
 
 
-class InferenceRequest(BaseModel):
-    query: str
-    context: list[str] = []
-    history: list[dict] = []
+class ModelStatusResponse(BaseModel):
+    loaded: bool
+    model_name: str
+    load_time: Optional[datetime] = None
 
 
-class InferenceResponse(BaseModel):
-    text: str
-    confidence: float
-    model: Optional[str] = None
+class ModelLoadRequest(BaseModel):
+    model_id: str
+
+
+class ModelLoadResponse(BaseModel):
+    task_id: str
+    status: str = "loading"
+
+
+class ModelInfoResponse(BaseModel):
+    model_name: str
+    version: str
+    parameters_count: int
+    model_type: str

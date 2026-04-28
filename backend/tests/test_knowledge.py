@@ -38,7 +38,7 @@ async def test_list_documents_returns_own_docs(client, auth_headers):
     response = await client.get("/api/v1/knowledge/documents", headers=auth_headers)
     assert response.status_code == 200
     data = response.json()
-    assert isinstance(data, list)
+    assert isinstance(data["documents"], list)
 
 
 @pytest.mark.asyncio
@@ -74,7 +74,7 @@ async def test_list_documents_kb_isolation(client):
 
     docs_user2 = await client.get("/api/v1/knowledge/documents", headers=headers2)
     assert docs_user2.status_code == 200
-    doc_names = [d["filename"] for d in docs_user2.json()]
+    doc_names = [d["filename"] for d in docs_user2.json()["documents"]]
     assert "secret.md" not in doc_names
 
 
@@ -91,7 +91,8 @@ async def test_delete_document(client, auth_headers):
         f"/api/v1/knowledge/documents/{doc_id}",
         headers=auth_headers,
     )
-    assert delete_resp.status_code == 204
+    assert delete_resp.status_code == 200
+    assert "message" in delete_resp.json()
 
 
 @pytest.mark.asyncio
@@ -105,9 +106,9 @@ async def test_delete_nonexistent_document(client, auth_headers):
 
 @pytest.mark.asyncio
 async def test_search_knowledge(client, auth_headers):
-    response = await client.get(
+    response = await client.post(
         "/api/v1/knowledge/search",
-        params={"query": "test content", "top_k": 5},
+        json={"query": "test content", "top_k": 5},
         headers=auth_headers,
     )
     assert response.status_code == 200

@@ -13,7 +13,7 @@ from app.core.database import get_db
 from app.dependencies import get_current_user
 from app.models.train_job import TrainJob
 from app.models.user import User
-from app.schemas.train import TrainJobRequest, TrainJobResponse
+from app.schemas.train import TrainJobRequest, TrainJobResponse, TrainConfigPreset, TRAIN_CONFIG_PRESETS
 from app.services.train.train_service import TrainService
 
 
@@ -51,6 +51,13 @@ class AvailableModelsResponse(BaseModel):
 router = APIRouter()
 
 _cancel_events: dict[str, threading.Event] = {}
+
+
+@router.get("/configs", response_model=list[TrainConfigPreset])
+async def get_train_configs(
+    current_user: Annotated[User, Depends(get_current_user)],
+):
+    return TRAIN_CONFIG_PRESETS
 
 
 def _job_to_response(job) -> TrainJobResponse:

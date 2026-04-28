@@ -12,7 +12,7 @@ describe('API Types', () => {
   });
 
   it('Conversation type has required fields', () => {
-    const conv: Conversation = { id: '1', title: 'Test', createdAt: '2026-01-01', updatedAt: '2026-01-01' };
+    const conv: Conversation = { id: '1', title: 'Test', status: 'active', createdAt: '2026-01-01', updatedAt: '2026-01-01', messageCount: 0 };
     expectTypeOf(conv.id).toBeString();
     expectTypeOf(conv.title).toBeString();
   });

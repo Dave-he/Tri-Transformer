@@ -1,5 +1,5 @@
 import apiClient from './client';
-import type { Conversation, Message, MessageSource } from '@/types/api';
+import type { Conversation, Message, MessageSource, PaginationInfo } from '@/types/api';
 
 interface RawMessage {
   message_id?: string;
@@ -27,8 +27,8 @@ function normalizeMessage(raw: RawMessage): Message {
   };
 }
 
-export const getConversationsApi = async (): Promise<{ conversations: Conversation[] }> => {
-  const { data } = await apiClient.get<{ conversations: Conversation[] }>('/chat/sessions');
+export const getConversationsApi = async (page = 1, pageSize = 20): Promise<{ conversations: Conversation[]; pagination: PaginationInfo }> => {
+  const { data } = await apiClient.get<{ conversations: Conversation[]; pagination: PaginationInfo }>('/chat/sessions', { params: { page, page_size: pageSize } });
   return data;
 };
 
@@ -37,9 +37,14 @@ export const createConversationApi = async (title?: string): Promise<Conversatio
   return data;
 };
 
+export const deleteConversationApi = async (conversationId: string): Promise<{ message: string }> => {
+  const { data } = await apiClient.delete<{ message: string }>(`/chat/sessions/${conversationId}`);
+  return data;
+};
+
 export const getMessagesApi = async (conversationId: string): Promise<{ messages: Message[] }> => {
-  const { data } = await apiClient.get<{ messages: RawMessage[] }>(`/chat/sessions/${conversationId}/history`);
-  return { messages: data.messages.map(normalizeMessage) };
+  const { data } = await apiClient.get<RawMessage[]>(`/chat/sessions/${conversationId}/history`);
+  return { messages: data.map(normalizeMessage) };
 };
 
 export const sendMessageApi = async (conversationId: string, content: string): Promise<{ message: Message }> => {

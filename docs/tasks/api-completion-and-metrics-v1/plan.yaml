@@ -1,0 +1,159 @@
+task_id: "api-completion-and-metrics-v1"
+mode: "standard"
+
+tasks:
+  - id: T1
+    type: code
+    title: "[GREEN] Model API三端点 + Service + Schema"
+    files:
+      - backend/app/schemas/model.py
+      - backend/app/services/model/model_service.py
+      - backend/app/api/v1/model.py
+    desc: >
+      新建model schema: ModelStatusResponse, ModelLoadRequest, ModelLoadResponse, ModelInfoResponse
+      新建ModelService: get_status()读取settings/mock_inference状态, load_model()后台任务, get_info()返回配置
+      model.py新增: GET /status, POST /load(202), GET /info
+    test:
+      command: "cd backend && .venv/bin/pytest tests/test_model_api.py -v"
+      expect: PASS
+    depends_on: []
+
+  - id: T2
+    type: code
+    title: "[GREEN] Chat DELETE端点 + 级联删除"
+    files:
+      - backend/app/api/v1/chat.py
+      - backend/app/services/chat/chat_service.py
+      - backend/app/schemas/chat.py
+    desc: >
+      ChatService新增delete_session(session_id, user_id): 验证归属 -> 删除ChatMessage -> 删除ChatSession
+      chat.py新增: DELETE /sessions/{session_id}, 返回{message: "Session deleted"}, 403/401错误
+      同时修改send_message响应格式为{message: MessageResponse}
+    test:
+      command: "cd backend && .venv/bin/pytest tests/test_chat.py -v"
+      expect: PASS
+    depends_on: []
+
+  - id: T3
+    type: code
+    title: "[GREEN] Knowledge文档状态 + 搜索改为POST + 响应格式修复"
+    files:
+      - backend/app/schemas/knowledge.py
+      - backend/app/api/v1/knowledge.py
+    desc: >
+      新建knowledge schema: DocumentStatusResponse, SearchRequest
+      修改DocumentResponse添加type/size字段
+      knowledge.py新增: GET /documents/{id}/status
+      修改search从GET改为POST, 接收SearchRequest body
+      修改upload响应添加type/size
+      修改list响应包装为{documents: [...]}
+      修改delete响应从204改为200+{message}
+    test:
+      command: "cd backend && .venv/bin/pytest tests/test_knowledge.py -v"
+      expect: PASS
+    depends_on: []
+
+  - id: T4
+    type: code
+    title: "[GREEN] BGEReranker接入搜索管道"
+    files:
+      - backend/app/services/rag/retriever.py
+      - backend/app/services/chat/chat_service.py
+      - backend/app/core/config.py
+    desc: >
+      config.py新增: use_reranker=bool(default=True)
+      HybridRetriever.retrieve()返回后, ChatService.send_message()中调用BGEReranker.rerank()
+      同样修改knowledge.py的search_knowledge端点集成rerank
+      添加rerank_score字段到搜索结果
+    test:
+      command: "cd backend && .venv/bin/pytest tests/test_knowledge.py tests/test_chat.py -v"
+      expect: PASS
+    depends_on: [T3]
+
+  - id: T5
+    type: code
+    title: "[GREEN] SSE流式输出端点"
+    files:
+      - backend/app/api/v1/stream.py
+    desc: >
+      新增GET /sse/{session_id}端点:
+      - JWT通过query param token验证
+      - StreamingResponse(media_type="text/event-stream")
+      - async generator逐token推送data: {token}\n\n
+      - 结束推送data: [DONE]\n\n
+      - mock模式直接推送预设文本流
+    test:
+      command: "cd backend && .venv/bin/pytest tests/test_stream.py -v"
+      expect: PASS
+    depends_on: []
+
+  - id: T6
+    type: code
+    title: "[GREEN] Train configs预设端点"
+    files:
+      - backend/app/schemas/train.py
+      - backend/app/api/v1/train.py
+    desc: >
+      新建train schema: TrainConfigPreset(name, description, learning_rate, batch_size, epochs, lora_rank, lora_alpha)
+      train.py新增: GET /configs, 返回3种预设(default/lora_finetune/deepspeed_zero3)
+    test:
+      command: "cd backend && .venv/bin/pytest tests/test_train_configs.py -v"
+      expect: PASS
+    depends_on: []
+
+  - id: T7
+    type: code
+    title: "[GREEN] 前端API路由对齐 + 类型修复"
+    files:
+      - frontend/src/api/documents.ts
+      - frontend/src/api/conversations.ts
+      - frontend/src/api/training.ts
+      - frontend/src/api/model.ts
+      - frontend/src/types/index.ts
+    desc: >
+      documents.ts: 修正路由(/knowledge/documents, /knowledge/search), 字段映射(id/name)
+      conversations.ts: +deleteSessionApi, 修正sendMessage响应解析({message:{}}), Conversation类型补字段
+      training.ts: +getModelStatusApi, loadModelApi, getModelInfoApi, getTrainConfigsApi
+      新建model.ts: getStatus, loadModel, getInfo
+      types/index.ts: +ModelStatus, ModelInfo, DocumentStatus, TrainConfigPreset, 更新Conversation
+    test:
+      command: "cd frontend && pnpm typecheck && pnpm test --run"
+      expect: PASS
+    depends_on: []
+
+  - id: T8
+    type: code
+    title: "[GREEN] 前端重复模块清理"
+    files:
+      - frontend/src/api/metrics.ts
+    desc: >
+      删除metrics.ts, 确保所有import指向training.ts
+      更新所有引用metrics.ts的文件
+    test:
+      command: "cd frontend && pnpm typecheck && pnpm test --run"
+      expect: PASS
+    depends_on: [T7]
+
+  - id: T9
+    type: test
+    title: "[VERIFY] 后端全量pytest"
+    test:
+      command: "cd backend && .venv/bin/pytest tests/ -q"
+      expect: "PASS (0 failures)"
+    depends_on: [T1, T2, T3, T4, T5, T6]
+
+  - id: T10
+    type: test
+    title: "[VERIFY] 前端全量vitest"
+    test:
+      command: "cd frontend && pnpm test --run"
+      expect: "PASS (0 failures)"
+    depends_on: [T7, T8]
+
+  - id: T11
+    type: test
+    title: "[VERIFY] flake8增量检查"
+    test:
+      command: "cd backend && git diff --name-only HEAD | grep '\\.py$' | xargs .venv/bin/flake8 --max-line-length=120"
+      expect: "0 errors"
+    depends_on: [T1, T2, T3, T4, T5, T6]

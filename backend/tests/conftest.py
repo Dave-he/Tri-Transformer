@@ -62,6 +62,10 @@ async def client(test_engine):
     app.dependency_overrides[get_db] = override_get_db
     transport = ASGITransport(app=app)
 
+    from app.api.v1 import auth as auth_module
+    original_enabled = auth_module.limiter.enabled
+    auth_module.limiter.enabled = False
+
     mock_retriever = AsyncMock()
     mock_retriever.retrieve = AsyncMock(return_value=[])
 
@@ -82,6 +86,7 @@ async def client(test_engine):
     ):
         async with AsyncClient(transport=transport, base_url="http://test") as ac:
             yield ac
+    auth_module.limiter.enabled = original_enabled
     app.dependency_overrides.clear()
 
 

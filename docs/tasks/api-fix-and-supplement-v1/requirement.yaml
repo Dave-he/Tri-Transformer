@@ -1,0 +1,103 @@
+task_id: "api-fix-and-supplement-v1"
+title: "修复失败测试 + 补全缺失API端点 + 前端WebSocket实时通信"
+priority: P0
+status: draft
+created_at: "2026-04-18"
+
+business_goal:
+  target_user: "开发团队"
+  problem: "3个pytest测试持续失败阻塞CI；ChatService缺少会话列表API；前端Chat轮询延迟高"
+  success_metrics:
+    - "pytest tests/ 全部通过（0 failures）"
+    - "GET /api/chat/conversations 响应时间 <200ms"
+    - "WebSocket消息推送延迟 <500ms"
+
+scope:
+  in_scope:
+    - "修复3个失败测试（DoraAdapter ImportError + test_galore_config AssertionError + test_knowledge_graph AssertionError）"
+    - "补全GET /api/chat/conversations端点"
+    - "前端WebSocket实时通信实现"
+  out_of_scope:
+    - "新增Chat功能特性"
+    - "修改已有通过的测试"
+    - "重构现有API结构"
+
+requirements:
+  - id: R1
+    title: "修复DoraAdapter ImportError"
+    priority: P0
+    ac:
+      - given: "pytest测试环境已配置"
+        when: "运行pytest tests/"
+        then: "所有测试通过，DoraAdapter相关import正确解析，0个ImportError"
+
+  - id: R2
+    title: "修复test_galore_config断言失败"
+    priority: P0
+    ac:
+      - given: "配置文件包含galore_config相关键值"
+        when: "运行pytest tests/test_galore_config.py"
+        then: "所有断言通过，galore_config配置项值与测试期望一致"
+
+  - id: R3
+    title: "补全GET /api/chat/conversations端点"
+    priority: P0
+    ac:
+      - given: "用户已认证且存在会话数据"
+        when: "GET /api/chat/conversations?page=1&page_size=20"
+        then: "返回200，body包含conversations数组（每个含id/title/status/updated_at字段）和pagination元数据"
+      - given: "用户已认证但无会话数据"
+        when: "GET /api/chat/conversations"
+        then: "返回200，body包含空conversations数组[]"
+      - given: "用户已认证"
+        when: "GET /api/chat/conversations?status=active"
+        then: "返回200，只包含status=active的会话"
+
+  - id: R4
+    title: "前端WebSocket实时通信"
+    priority: P1
+    ac:
+      - given: "用户打开Chat页面且WebSocket服务可用"
+        when: "WebSocket连接建立成功"
+        then: "消息延迟<500ms，UI显示connected状态指示器"
+      - given: "WebSocket连接意外断开"
+        when: "客户端检测到断连"
+        then: "自动重连（最多3次，间隔5s），UI显示reconnecting状态"
+      - given: "重连3次均失败"
+        when: "降级为轮询模式"
+        then: "UI显示offline状态，轮询间隔5s获取消息"
+
+api_contracts:
+  GET /api/chat/conversations:
+    method: GET
+    path: /api/chat/conversations
+    auth: required (JWT)
+    query_params:
+      page: integer, default=1
+      page_size: integer, default=20, max=100
+      status: string, enum=[active, archived, all], default=all
+    response_200:
+      conversations:
+        - id: string
+          title: string
+          status: string
+          created_at: datetime
+          updated_at: datetime
+          message_count: integer
+      pagination:
+        page: integer
+        page_size: integer
+        total: integer
+        total_pages: integer
+    response_401:
+      error: "Unauthorized"
+
+constraints:
+  - "不修改已有通过的测试"
+  - "后端API变更需保持向后兼容"
+  - "WebSocket实现需考虑并发和内存安全"
+
+implicit_requirements:
+  - "WebSocket连接需要心跳机制防止僵尸连接"
+  - "GET /api/chat/conversations需要按updated_at降序排序"
+  - "分页超出范围时返回空列表而非错误"

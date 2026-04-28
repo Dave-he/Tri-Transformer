@@ -6,6 +6,7 @@ import {
   searchDocumentsApi,
 } from '@/api/documents';
 import type { DocumentState } from '@/types/store';
+import type { DocumentStatus } from '@/types/api';
 
 export const useDocumentStore = create<DocumentState>((set) => ({
   documents: [],
@@ -28,11 +29,21 @@ export const useDocumentStore = create<DocumentState>((set) => ({
     set({ uploadProgress: 0, error: null });
     try {
       set({ uploadProgress: 30 });
-      const document = await uploadDocumentApi(file);
+      const uploadResult = await uploadDocumentApi(file);
       set({ uploadProgress: 100 });
       await new Promise((r) => setTimeout(r, 200));
       set((state) => ({
-        documents: [document, ...state.documents],
+        documents: [
+          {
+            id: uploadResult.document_id,
+            name: file.name,
+            type: file.name.split('.').pop() ?? '',
+            size: file.size,
+            status: uploadResult.status as DocumentStatus,
+            createdAt: new Date().toISOString(),
+          },
+          ...state.documents,
+        ],
         uploadProgress: null,
       }));
     } catch (err) {

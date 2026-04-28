@@ -25,6 +25,7 @@ class Settings(BaseSettings):
     chunk_overlap: int = 50
     top_k_retrieval: int = 10
     top_k_rerank: int = 5
+    use_reranker: bool = True
 
     train_d_model: int = 512
     train_num_heads: int = 8
@@ -42,5 +43,6 @@ class Settings(BaseSettings):
         if env == "production" and v == "dev-secret-key-change-in-production":
             raise ValueError("生产环境必须通过 SECRET_KEY 环境变量设置安全密钥")
         return v
+
 
 settings = Settings()

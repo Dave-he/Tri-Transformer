@@ -1,6 +1,86 @@
 from typing import Optional
 
+import numpy as np
+
 from app.services.rag.vector_store import ChromaVectorStore
+
+
+class HippoRetriever:
+    def __init__(
+        self,
+        vector_store: ChromaVectorStore,
+        top_k_candidates: int = 6,
+    ):
+        self.vector_store = vector_store
+        self.top_k_candidates = top_k_candidates
+
+    async def retrieve(
+        self,
+        query: str,
+        kb_id: str,
+        top_k: int = 10,
+        metadata_filter: Optional[dict] = None,
+    ) -> list[dict]:
+        candidates = await self.vector_store.query(
+            query=query,
+            kb_id=kb_id,
+            top_k=self.top_k_candidates,
+            metadata_filter=metadata_filter,
+        )
+        if not candidates:
+            return []
+        if len(candidates) == 1:
+            return candidates[:top_k]
+
+        query_tokens = set(query.lower().split())
+        ppr_scores = self._run_ppr(candidates, query_tokens)
+
+        for i, score in enumerate(ppr_scores):
+            candidates[i]["score"] = float(score)
+
+        candidates.sort(key=lambda x: x["score"], reverse=True)
+        return candidates[:top_k]
+
+    def _build_ppr_graph(self, candidates: list[dict]) -> np.ndarray:
+        n = len(candidates)
+        doc_tokens = [set(c["text"].lower().split()) for c in candidates]
+        adj = np.zeros((n, n), dtype=np.float64)
+        for i in range(n):
+            for j in range(n):
+                if i == j:
+                    continue
+                overlap = len(doc_tokens[i] & doc_tokens[j])
+                if overlap > 0:
+                    adj[i][j] = overlap / max(len(doc_tokens[j]), 1)
+        row_sums = adj.sum(axis=1, keepdims=True)
+        row_sums[row_sums == 0] = 1.0
+        adj = adj / row_sums
+        return adj
+
+    def _run_ppr(
+        self,
+        candidates: list[dict],
+        query_tokens: set,
+        damping: float = 0.85,
+        max_iter: int = 10,
+    ) -> np.ndarray:
+        n = len(candidates)
+        doc_tokens = [set(c["text"].lower().split()) for c in candidates]
+        personalization = np.zeros(n, dtype=np.float64)
+        for i in range(n):
+            overlap = len(query_tokens & doc_tokens[i])
+            personalization[i] = overlap / max(len(query_tokens), 1)
+        p_sum = personalization.sum()
+        if p_sum > 0:
+            personalization = personalization / p_sum
+        else:
+            personalization = np.ones(n, dtype=np.float64) / n
+
+        adj = self._build_ppr_graph(candidates)
+        scores = personalization.copy()
+        for _ in range(max_iter):
+            scores = damping * adj.T @ scores + (1 - damping) * personalization
+        return scores
 
 
 class HybridRetriever:

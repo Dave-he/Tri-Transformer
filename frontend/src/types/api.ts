@@ -7,8 +7,17 @@ export interface User {
 export interface Conversation {
   readonly id: string;
   readonly title: string;
+  readonly status: string;
   readonly createdAt: string;
   readonly updatedAt: string;
+  readonly messageCount: number;
+}
+
+export interface PaginationInfo {
+  readonly page: number;
+  readonly pageSize: number;
+  readonly total: number;
+  readonly totalPages: number;
 }
 
 export interface MessageSource {
@@ -76,4 +85,33 @@ export interface ApiResponse<T> {
 export interface LoginResponse {
   readonly access_token: string;
   readonly token_type: string;
+}
+
+export interface ModelStatus {
+  readonly status: string;
+  readonly model_loaded: boolean;
+  readonly mock_mode: boolean;
+}
+
+export interface ModelInfo {
+  readonly model_type: string;
+  readonly config: Record<string, unknown>;
+  readonly device: string;
+}
+
+export interface DocumentStatusResponse {
+  readonly document_id: string;
+  readonly status: DocumentStatus;
+  readonly progress: number;
+  readonly chunk_count: number;
+}
+
+export interface TrainConfigPreset {
+  readonly name: string;
+  readonly description: string;
+  readonly learning_rate: number;
+  readonly batch_size: number;
+  readonly epochs: number;
+  readonly lora_rank: number;
+  readonly lora_alpha: number;
 }

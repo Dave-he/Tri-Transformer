@@ -84,8 +84,10 @@ describe('conversationStore', () => {
     vi.mocked(createConversationApi).mockResolvedValue({
       id: 'conv-new',
       title: 'New Chat',
+      status: 'active',
       createdAt: '2026-01-01T00:00:00Z',
       updatedAt: '2026-01-01T00:00:00Z',
+      messageCount: 0,
     });
 
     useConversationStore.setState({ conversations: [] });

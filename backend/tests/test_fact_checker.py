@@ -65,4 +65,4 @@ class TestChatHallucinationField:
             )
             assert msg_response.status_code == 200
             data = msg_response.json()
-            assert "hallucination_detected" in data
+            assert "hallucination_detected" in data["message"]

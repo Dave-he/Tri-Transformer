@@ -1,4 +1,5 @@
 from datetime import datetime
+from typing import Optional
 from pydantic import BaseModel
 
 
@@ -32,3 +33,32 @@ class HistoryMessage(BaseModel):
     content: str
     sources: list[dict]
     created_at: datetime
+
+
+class ConversationItem(BaseModel):
+    id: str
+    title: str
+    status: str = "active"
+    created_at: datetime
+    updated_at: Optional[datetime] = None
+    message_count: int = 0
+
+
+class PaginationInfo(BaseModel):
+    page: int
+    page_size: int
+    total: int
+    total_pages: int
+
+
+class SendMessageResponse(BaseModel):
+    message: MessageResponse
+
+
+class ConversationListResponse(BaseModel):
+    conversations: list[ConversationItem]
+    pagination: PaginationInfo
+
+
+class SessionDeleteResponse(BaseModel):
+    message: str

@@ -1,0 +1,203 @@
+task_id: "api-completion-and-metrics-v1"
+title: "补全缺失API端点 + 前后端API对齐 + Reranker接入 + SSE流式输出"
+priority: P0
+status: draft
+created_at: "2026-04-28"
+
+business_goal:
+  target_user: "开发团队 + 前端用户"
+  problem: "Model API 75%缺失；前后端API路由/字段/响应格式严重不对齐；BGEReranker未接入搜索管道；无SSE流式端点；Chat DELETE缺失"
+  success_metrics:
+    - "前后端API全部对齐，0个路由不匹配"
+    - "pytest 0 failures"
+    - "vitest 0 failures"
+    - "BGEReranker集成后搜索结果质量提升可量化"
+
+scope:
+  in_scope:
+    - "补全 Model API: GET /status, POST /load, GET /info"
+    - "补全 Chat API: DELETE /sessions/{id}"
+    - "补全 Knowledge API: GET /documents/{id}/status"
+    - "修复前后端API路由/字段/响应格式不对齐(10处)"
+    - "接入 BGEReranker 到搜索管道"
+    - "新增 SSE 流式输出端点 GET /stream/sse/{session_id}"
+    - "删除前端重复 API 模块(metrics.ts vs training.ts)"
+    - "补全 Train API: GET /configs 预设配置端点"
+  out_of_scope:
+    - "MP4/MP3 多模态文档处理(Phase 2)"
+    - "Milvus 向量库集成(Phase 2)"
+    - "WebRTC 实时音频流(Phase 2)"
+    - "前端UI/UX新增功能"
+
+requirements:
+  - id: R1
+    title: "补全 Model API 三端点"
+    priority: P0
+    ac:
+      - given: "后端模型服务运行中"
+        when: "GET /api/v1/model/status"
+        then: "返回200, body含loaded(bool), model_name(str), load_time(datetime)"
+      - given: "用户已认证"
+        when: "POST /api/v1/model/load, body含model_id(str)"
+        then: "返回202, 触发后台模型加载, 返回{task_id, status='loading'}"
+      - given: "模型已加载"
+        when: "GET /api/v1/model/info"
+        then: "返回200, body含model_name, version, parameters_count, model_type"
+
+  - id: R2
+    title: "补全 Chat DELETE端点"
+    priority: P0
+    ac:
+      - given: "用户已认证且拥有该会话"
+        when: "DELETE /api/v1/chat/sessions/{id}"
+        then: "返回200, body含{message: 'Session deleted'}, 会话及消息从数据库删除"
+      - given: "用户已认证但不拥有该会话"
+        when: "DELETE /api/v1/chat/sessions/{id}"
+        then: "返回403 Forbidden"
+      - given: "未认证"
+        when: "DELETE /api/v1/chat/sessions/{id}"
+        then: "返回401 Unauthorized"
+
+  - id: R3
+    title: "补全 Knowledge文档状态轮询"
+    priority: P1
+    ac:
+      - given: "文档正在向量化"
+        when: "GET /api/v1/knowledge/documents/{id}/status"
+        then: "返回200, body含{document_id, status='processing', progress:0-100, chunk_count}"
+      - given: "文档向量化完成"
+        when: "GET /api/v1/knowledge/documents/{id}/status"
+        then: "返回200, body含{document_id, status='completed', progress:100, chunk_count}"
+
+  - id: R4
+    title: "修复前后端API路由不对齐"
+    priority: P0
+    ac:
+      - given: "前端调用POST /documents/upload"
+        when: "发送FormData上传文档"
+        then: "后端接收成功, 路由/响应格式/字段名与前端期望一致"
+      - given: "前端调用POST /documents/search with {query, topK}"
+        when: "搜索知识库"
+        then: "后端接收成功, 返回格式与前端SearchResult类型一致"
+      - given: "前端调用POST /chat/sessions/{id}/messages"
+        when: "发送消息"
+        then: "后端响应格式为{message: {...}}，与前端normalizeMessage对齐"
+
+  - id: R5
+    title: "接入BGEReranker到搜索管道"
+    priority: P1
+    ac:
+      - given: "知识库搜索请求进入"
+        when: "HybridRetriever.retrieve()返回候选结果"
+        then: "BGEReranker.rerank()对候选结果重排序, 返回top_k精炼结果, 每个结果含rerank_score字段"
+      - given: "Chat消息发送请求进入"
+        when: "ChatService检索知识"
+        then: "检索结果经rerank后传给推理服务, 回复引用rank_score"
+
+  - id: R6
+    title: "SSE流式输出端点"
+    priority: P1
+    ac:
+      - given: "用户已认证"
+        when: "GET /api/v1/stream/sse/{session_id}?token=JWT"
+        then: "返回200 Content-Type=text/event-stream, 逐Token推送生成内容"
+      - given: "推理完成"
+        when: "模型生成结束"
+        then: "SSE推送[DONE]事件并关闭流"
+
+  - id: R7
+    title: "补全Train预设配置端点"
+    priority: P2
+    ac:
+      - given: "用户已认证"
+        when: "GET /api/v1/train/configs"
+        then: "返回200, body含预设训练配置列表(至少3种: default/lora-qlora/deepspeed)"
+
+  - id: R8
+    title: "前端重复API模块清理 + 类型对齐"
+    priority: P0
+    ac:
+      - given: "前端项目编译"
+        when: "pnpm typecheck"
+        then: "0 type errors, metrics.ts和training.ts不重复"
+      - given: "Conversation类型定义"
+        when: "更新为含status/message_count/updatedAt字段"
+        then: "前端类型与后端ConversationItem完全对齐"
+
+api_contracts:
+  GET /api/v1/model/status:
+    method: GET
+    path: /api/v1/model/status
+    auth: none
+    response_200:
+      loaded: bool
+      model_name: str
+      load_time: datetime|null
+
+  POST /api/v1/model/load:
+    method: POST
+    auth: JWT required
+    request_body:
+      model_id: str
+    response_202:
+      task_id: str
+      status: "loading"
+
+  GET /api/v1/model/info:
+    method: GET
+    auth: none
+    response_200:
+      model_name: str
+      version: str
+      parameters_count: int
+      model_type: str
+
+  DELETE /api/v1/chat/sessions/{id}:
+    method: DELETE
+    auth: JWT required
+    response_200:
+      message: "Session deleted"
+    response_403:
+      error: "Forbidden"
+    response_401:
+      error: "Unauthorized"
+
+  GET /api/v1/knowledge/documents/{id}/status:
+    method: GET
+    auth: JWT required
+    response_200:
+      document_id: str
+      status: str  # "processing" | "completed" | "failed"
+      progress: int  # 0-100
+      chunk_count: int
+
+  GET /api/v1/stream/sse/{session_id}:
+    method: GET
+    auth: JWT via query param
+    response_200:
+      content_type: "text/event-stream"
+      events: "token chunks + [DONE]"
+
+  GET /api/v1/train/configs:
+    method: GET
+    auth: JWT required
+    response_200:
+      configs:
+        - name: str
+          description: str
+          learning_rate: float
+          batch_size: int
+          epochs: int
+          lora_rank: int|null
+          lora_alpha: float|null
+
+constraints:
+  - "不破坏现有通过测试"
+  - "API变更保持向后兼容(新增端点,不改现有端点行为)"
+  - "SSE实现需考虑并发和内存安全"
+  - "BGEReranker在mock模式下使用随机分数"
+
+implicit_requirements:
+  - "Model load操作需异步后台执行"
+  - "DELETE sessions需级联删除关联消息"
+  - "前端API路由修复需同步更新前端类型定义"

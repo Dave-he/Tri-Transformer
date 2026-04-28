@@ -26,12 +26,8 @@ describe('documentStore', () => {
     const { useDocumentStore } = await import('../documentStore');
 
     vi.mocked(uploadDocumentApi).mockResolvedValue({
-      id: 'doc-1',
-      name: 'test.pdf',
-      type: 'pdf',
-      size: 1024,
-      status: 'processing' as const,
-      createdAt: '2026-01-01T00:00:00Z',
+      document_id: 'doc-1',
+      status: 'processing',
     });
 
     const file = new File(['content'], 'test.pdf', { type: 'application/pdf' });

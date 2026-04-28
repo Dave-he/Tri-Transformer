@@ -52,3 +52,22 @@ class TrainService:
             select(TrainJob).where(TrainJob.user_id == user_id).order_by(TrainJob.created_at.desc())
         )
         return result.scalars().all()
+
+
+GALORE_DEFAULTS = {
+    "rank": 128,
+    "update_proj_gap": 200,
+    "scale": 0.25,
+}
+
+
+def validate_galore_config(config: dict) -> dict:
+    if not config.get("use_galore", False):
+        return {"use_galore": False}
+    result = {"use_galore": True}
+    for key, default in GALORE_DEFAULTS.items():
+        result[key] = config.get(key, default)
+    rank = result["rank"]
+    if rank < 1:
+        raise ValueError(f"Invalid GaLore rank: {rank}, must be >= 1")
+    return result

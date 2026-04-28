@@ -1,0 +1,88 @@
+task_id: "api-fix-and-supplement-v1"
+mode: "standard"
+
+tasks:
+  - id: T1
+    type: code
+    title: "[GREEN] 实现 DoraAdapter 类"
+    file: backend/app/model/lora_adapter.py
+    desc: >
+      在 LoraAdapter 类后新增 DoraAdapter(nn.Module):
+      - __init__(linear, rank, alpha, freeze_base): magnitude初始化为base_weight逐行范数
+      - _effective_weight(): 归一化LoRA方向 * magnitude
+      - forward(x): F.linear(x, effective_weight, bias)
+      - param_groups(base_lr): lora_A/lora_B/magnitude三组, lr_ratio对lora_A生效
+      - base_weight冻结, lora_A/lora_B/magnitude可训练
+    test:
+      command: "cd backend && .venv/bin/pytest tests/test_lora_adapter.py -v"
+      expect: PASS
+    depends_on: []
+
+  - id: T2
+    type: code
+    title: "[GREEN] 实现 validate_galore_config 函数"
+    file: backend/app/services/train/train_service.py
+    desc: >
+      在 TrainService 类外新增 validate_galore_config(config) 函数:
+      - use_galore=False → 返回 {use_galore: False}
+      - use_galore=True → 填充默认值 rank=128, update_proj_gap=200, scale=0.25
+      - rank<1 → raise ValueError
+    test:
+      command: "cd backend && .venv/bin/pytest tests/test_galore.py::TestTrainServiceGaLoreConfig -v"
+      expect: PASS
+    depends_on: []
+
+  - id: T3
+    type: code
+    title: "[GREEN] 实现 HippoRetriever 类"
+    file: backend/app/services/rag/retriever.py
+    desc: >
+      在 HybridRetriever 类后新增 HippoRetriever 类:
+      - __init__(vector_store, top_k_candidates=6)
+      - retrieve(query, kb_id, top_k, metadata_filter): vector_store.query → PPR重排序 → top_k
+      - _build_ppr_graph(candidates): token overlap邻接矩阵
+      - _run_ppr(graph, query_tokens): PPR迭代(max_iter=10, damping=0.85)
+    test:
+      command: "cd backend && .venv/bin/pytest tests/test_hippo_retriever.py -v"
+      expect: PASS
+    depends_on: []
+
+  - id: T4
+    type: code
+    title: "[GREEN] 新增 GET /api/v1/chat/sessions 端点"
+    files:
+      - backend/app/api/v1/chat.py
+      - backend/app/services/chat/chat_service.py
+      - backend/app/schemas/chat.py
+    desc: >
+      chat.py 新增 GET /sessions 端点(page/page_size/status参数),
+      ChatService 新增 list_sessions 方法(分页+过滤+排序),
+      schemas/chat.py 新增 ConversationItem/ConversationListResponse
+    test:
+      command: "cd backend && .venv/bin/pytest tests/test_chat.py -v"
+      expect: PASS
+    depends_on: []
+
+  - id: T5
+    type: test
+    title: "[VERIFY] 后端全量 pytest"
+    test:
+      command: "cd backend && .venv/bin/pytest tests/ -q"
+      expect: "PASS (0 failures)"
+    depends_on: [T1, T2, T3, T4]
+
+  - id: T6
+    type: test
+    title: "[VERIFY] 前端全量 vitest"
+    test:
+      command: "cd frontend && pnpm test --run"
+      expect: "PASS (115 passed)"
+    depends_on: [T4]
+
+  - id: T7
+    type: test
+    title: "[VERIFY] flake8 增量检查"
+    test:
+      command: "cd backend && .venv/bin/flake8 app/model/lora_adapter.py app/services/train/train_service.py app/services/rag/retriever.py app/api/v1/chat.py app/services/chat/chat_service.py app/schemas/chat.py"
+      expect: "0 errors"
+    depends_on: [T1, T2, T3, T4]

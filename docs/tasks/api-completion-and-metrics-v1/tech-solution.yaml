@@ -1,0 +1,242 @@
+task_id: "api-completion-and-metrics-v1"
+title: "补全缺失API端点 + 前后端API对齐 + Reranker接入 + SSE流式输出"
+platform: "Backend+Web"
+mode: "standard"
+
+design_decisions:
+  - id: DD1
+    decision: "Model API三端点采用轻量实现: status返回内存中的模型状态, load触发后台任务, info返回静态配置信息"
+    reason: "当前mock_inference=True, 真实模型加载需GPU资源, 状态端点仅反映当前配置"
+
+  - id: DD2
+    decision: "Chat DELETE端点级联删除消息, 使用SQLAlchemy delete where session_id匹配"
+    reason: "用户删除会话应同时删除所有消息, 避免孤儿数据"
+
+  - id: DD3
+    decision: "前后端API对齐策略: 修改后端路由和响应格式以匹配前端期望, 不改前端"
+    reason: "前端已有完整UI逻辑, 修改后端更安全; 前端API client只需微调字段映射"
+
+  - id: DD4
+    decision: "BGEReranker在搜索管道中作为可选步骤, 通过settings.use_reranker配置开关"
+    reason: "mock模式下reranker返回随机分数, 需开关控制避免影响测试稳定性"
+
+  - id: DD5
+    decision: "SSE端点使用async generator + StreamingResponse实现, token-by-token推送"
+    reason: "FastAPI原生支持SSE via StreamingResponse, 无需额外依赖"
+
+  - id: DD6
+    decision: "Train configs端点返回3种预设: default(基础), lora_finetune(LoRA微调), deepspeed_zero3(分布式)"
+    reason: "覆盖PRD要求的常见训练场景, 每种预设对应实际训练参数组合"
+
+  - id: DD7
+    decision: "前端重复API模块(metrics.ts)删除, 统一使用training.ts"
+    reason: "metrics.ts和training.ts完全重复, training.ts命名更准确涵盖训练指标"
+
+file_changes:
+  - path: backend/app/api/v1/model.py
+    action: modify
+    desc: >
+      新增3个端点:
+      - GET /status: 返回ModelStatusResponse{loaded, model_name, load_time}
+      - POST /load: 接收ModelLoadRequest{model_id}, 返回202{task_id, status}
+      - GET /info: 返回ModelInfoResponse{model_name, version, parameters_count, model_type}
+      现有POST /inference不变
+
+  - path: backend/app/schemas/model.py
+    action: create
+    desc: >
+      新建模型相关schema:
+      - ModelStatusResponse: loaded(bool), model_name(str), load_time(Optional[datetime])
+      - ModelLoadRequest: model_id(str)
+      - ModelLoadResponse: task_id(str), status(str)
+      - ModelInfoResponse: model_name(str), version(str), parameters_count(int), model_type(str)
+
+  - path: backend/app/services/model/model_service.py
+    action: create
+    desc: >
+      新建ModelService类:
+      - get_status(): 读取内存中的模型加载状态
+      - load_model(model_id): 后台任务加载模型, 更新内存状态
+      - get_info(): 返回当前模型配置信息(从settings读取)
+      使用_singleton模式维护模型状态
+
+  - path: backend/app/api/v1/chat.py
+    action: modify
+    desc: >
+      新增DELETE /sessions/{session_id}端点:
+      - 验证user拥有该session
+      - 级联删除ChatMessage和ChatSession
+      - 返回{message: "Session deleted"}
+      同时修改send_message响应格式为{message: MessageResponse}
+
+  - path: backend/app/services/chat/chat_service.py
+    action: modify
+    desc: >
+      新增delete_session方法:
+      - 查询session归属验证
+      - 删除关联ChatMessage(where session_id)
+      - 删除ChatSession
+      同时修改send_message返回格式包装为{message: ...}
+
+  - path: backend/app/api/v1/knowledge.py
+    action: modify
+    desc: >
+      新增GET /documents/{document_id}/status端点:
+      - 返回DocumentStatusResponse{document_id, status, progress, chunk_count}
+      修改search端点从GET改为POST:
+      - POST /search 接收SearchRequest{query, top_k}
+      - 返回SearchResponse包装格式不变
+      修改upload响应格式添加size和type字段
+      修改list响应格式包装为{documents: [...]}
+      修改delete响应从204改为200+{message}
+
+  - path: backend/app/schemas/knowledge.py
+    action: create
+    desc: >
+      新建知识库相关schema:
+      - DocumentStatusResponse: document_id, status, progress, chunk_count
+      - SearchRequest: query(str), top_k(int=5)
+      修改DocumentResponse添加: type(str), size(int)
+
+  - path: backend/app/services/rag/retriever.py
+    action: modify
+    desc: >
+      HybridRetriever.retrieve()后添加可选rerank步骤:
+      - 读取settings.use_reranker配置
+      - 若True, 调用BGEReranker.rerank()对候选结果重排序
+      - 返回结果含rerank_score字段
+
+  - path: backend/app/services/chat/chat_service.py
+    action: modify
+    desc: >
+      send_message方法中检索后添加rerank:
+      - 检索结果经rerank后再传给推理服务
+      - settings.use_reranker开关控制
+
+  - path: backend/app/api/v1/stream.py
+    action: modify
+    desc: >
+      新增GET /sse/{session_id} SSE端点:
+      - StreamingResponse(media_type="text/event-stream")
+      - async generator逐token推送
+      - 结束推送[DONE]事件
+      JWT通过query param传递
+
+  - path: backend/app/api/v1/train.py
+    action: modify
+    desc: >
+      新增GET /configs端点:
+      - 返回list[TrainConfigPreset]
+      - 3种预设: default, lora_finetune, deepspeed_zero3
+
+  - path: backend/app/schemas/train.py
+    action: create
+    desc: >
+      新建TrainConfigPreset schema:
+      - name, description, learning_rate, batch_size, epochs, lora_rank, lora_alpha
+
+  - path: frontend/src/api/documents.ts
+    action: modify
+    desc: >
+      修复API路由对齐:
+      - uploadDocumentApi: POST /knowledge/documents (修正路由)
+      - searchDocumentsApi: POST /knowledge/search (修正路由+方法)
+      - 响应字段映射: document_id->id, filename->name
+      - deleteDocumentApi: 处理200+{message}响应
+
+  - path: frontend/src/api/conversations.ts
+    action: modify
+    desc: >
+      修复响应格式:
+      - sendMessageApi: 解析{message: {...}}包装
+      - Conversation类型添加status/message_count/updatedAt字段
+      - 新增deleteSessionApi函数
+
+  - path: frontend/src/api/metrics.ts
+    action: delete
+    desc: >
+      删除重复模块, 统一使用training.ts
+
+  - path: frontend/src/api/training.ts
+    action: modify
+    desc: >
+      确保包含所有metrics+training函数
+      - 新增getModelStatusApi, loadModelApi, getModelInfoApi
+      - 新增getTrainConfigsApi
+
+  - path: frontend/src/api/model.ts
+    action: create
+    desc: >
+      新建模型API模块:
+      - getStatusApi(): GET /model/status
+      - loadModelApi(modelId): POST /model/load
+      - getInfoApi(): GET /model/info
+
+  - path: frontend/src/types/index.ts
+    action: modify
+    desc: >
+      添加新类型:
+      - ModelStatus, ModelInfo, ModelLoadRequest/Response
+      - DocumentStatus
+      - TrainConfigPreset
+      更新Conversation类型添加status/message_count/updatedAt
+
+interfaces:
+  GET /api/v1/model/status:
+    response_200:
+      loaded: bool
+      model_name: str
+      load_time: datetime|null
+
+  POST /api/v1/model/load:
+    request:
+      model_id: str
+    response_202:
+      task_id: str
+      status: "loading"
+
+  GET /api/v1/model/info:
+    response_200:
+      model_name: str
+      version: str
+      parameters_count: int
+      model_type: str
+
+  DELETE /api/v1/chat/sessions/{session_id}:
+    auth: JWT
+    response_200:
+      message: "Session deleted"
+    response_403:
+      error: "Forbidden"
+
+  GET /api/v1/knowledge/documents/{document_id}/status:
+    auth: JWT
+    response_200:
+      document_id: str
+      status: str
+      progress: int
+      chunk_count: int
+
+  POST /api/v1/knowledge/search:
+    request:
+      query: str
+      top_k: int=5
+    response_200:
+      results: list[SearchResultItem]
+
+  GET /api/v1/stream/sse/{session_id}:
+    auth: JWT via query param
+    response_200:
+      content_type: text/event-stream
+
+  GET /api/v1/train/configs:
+    auth: JWT
+    response_200:
+      configs: list[TrainConfigPreset]
+
+test_commands:
+  backend_unit: "cd backend && .venv/bin/pytest tests/ -v"
+  backend_all: "cd backend && .venv/bin/pytest tests/ -q"
+  frontend: "cd frontend && pnpm test --run"
+  lint: "cd backend && git diff --name-only HEAD | grep '\\.py$' | xargs .venv/bin/flake8 --max-line-length=120"
+  typecheck: "cd frontend && pnpm typecheck"

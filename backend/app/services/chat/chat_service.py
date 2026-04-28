@@ -1,9 +1,10 @@
 import json
 import uuid
+import math
 from typing import Optional
 
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+from sqlalchemy import select, func
 
 from app.models.chat_session import ChatSession, ChatMessage
 from app.services.rag.embedder import get_embedder
@@ -68,6 +69,12 @@ class ChatService:
                 kb_id=kb_id,
                 top_k=settings.top_k_rerank,
             )
+            if settings.use_reranker:
+                from app.services.rag.reranker import BGEReranker
+                reranker = BGEReranker()
+                retrieved = await reranker.rerank(
+                    query=content, results=retrieved, top_k=settings.top_k_rerank
+                )
         except Exception:
             retrieved = []
 
@@ -114,3 +121,43 @@ class ChatService:
             .order_by(ChatMessage.created_at)
         )
         return result.scalars().all()
+
+    async def list_sessions(
+        self,
+        user_id: int,
+        page: int = 1,
+        page_size: int = 20,
+        status: Optional[str] = None,
+    ) -> tuple[list[ChatSession], int]:
+        query = select(ChatSession).where(ChatSession.user_id == user_id)
+        if status and status != "all":
+            query = query.where(ChatSession.status == status)
+        query = query.order_by(ChatSession.updated_at.desc())
+
+        count_query = select(func.count()).select_from(ChatSession).where(ChatSession.user_id == user_id)
+        if status and status != "all":
+            count_query = count_query.where(ChatSession.status == status)
+        total_result = await self.db.execute(count_query)
+        total = total_result.scalar() or 0
+
+        offset = (page - 1) * page_size
+        query = query.offset(offset).limit(page_size)
+
+        result = await self.db.execute(query)
+        sessions = result.scalars().all()
+
+        total_pages = math.ceil(total / page_size) if page_size > 0 else 1
+        return sessions, total, total_pages
+
+    async def delete_session(self, session_id: str, user_id: int) -> None:
+        await self.db.execute(
+            select(ChatMessage).where(ChatMessage.session_id == session_id)
+        )
+        from sqlalchemy import delete
+        await self.db.execute(
+            delete(ChatMessage).where(ChatMessage.session_id == session_id)
+        )
+        await self.db.execute(
+            delete(ChatSession).where(ChatSession.id == session_id)
+        )
+        await self.db.commit()

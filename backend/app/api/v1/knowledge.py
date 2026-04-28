@@ -1,7 +1,7 @@
 import uuid
 import logging
 
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, BackgroundTasks, Query
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, BackgroundTasks
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
@@ -11,7 +11,9 @@ from app.dependencies import get_current_user
 from app.models.user import User
 from app.models.document import Document
 from app.schemas.knowledge import (
-    DocumentResponse, DocumentUploadResponse, SearchResponse, SearchResultItem,
+    DocumentResponse, DocumentUploadResponse, DocumentListResponse,
+    SearchResponse, SearchResultItem, DocumentStatusResponse,
+    SearchRequest, DocumentDeleteResponse,
 )
 from app.services.rag.document_processor import DocumentProcessor
 from app.services.rag.embedder import get_embedder
@@ -133,7 +135,31 @@ async def upload_document(
     return DocumentUploadResponse(document_id=doc_id, status="processing")
 
 
-@router.get("/documents", response_model=list[DocumentResponse])
+@router.get("/documents/{document_id}/status", response_model=DocumentStatusResponse)
+async def get_document_status(
+    document_id: str,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    result = await db.execute(
+        select(Document).where(
+            Document.id == document_id,
+            Document.kb_id == current_user.kb_id,
+        )
+    )
+    doc = result.scalar_one_or_none()
+    if not doc:
+        raise HTTPException(status_code=404, detail="Document not found")
+    progress = 100 if doc.status == "ready" else 0 if doc.status == "processing" else -1
+    return DocumentStatusResponse(
+        document_id=doc.id,
+        status=doc.status,
+        progress=progress,
+        chunk_count=doc.chunk_count,
+    )
+
+
+@router.get("/documents", response_model=DocumentListResponse)
 async def list_documents(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
@@ -142,19 +168,22 @@ async def list_documents(
         select(Document).where(Document.kb_id == current_user.kb_id)
     )
     docs = result.scalars().all()
-    return [
+    documents = [
         DocumentResponse(
             document_id=d.id,
             filename=d.filename,
+            type=d.filename.rsplit(".", 1)[-1].lower() if "." in d.filename else "",
+            size=d.file_size if hasattr(d, "file_size") else 0,
             status=d.status,
             chunk_count=d.chunk_count,
             created_at=d.created_at,
         )
         for d in docs
     ]
+    return DocumentListResponse(documents=documents)
 
 
-@router.delete("/documents/{document_id}", status_code=204)
+@router.delete("/documents/{document_id}", response_model=DocumentDeleteResponse)
 async def delete_document(
     document_id: str,
     current_user: User = Depends(get_current_user),
@@ -175,24 +204,30 @@ async def delete_document(
 
     await db.delete(doc)
     await db.commit()
+    return DocumentDeleteResponse(message="Document deleted")
 
 
-@router.get("/search", response_model=SearchResponse)
+@router.post("/search", response_model=SearchResponse)
 async def search_knowledge(
-    query: str = Query(..., description="Search query"),
-    top_k: int = Query(5, ge=1, le=50),
+    payload: SearchRequest,
     current_user: User = Depends(get_current_user),
 ):
     try:
         store = get_vector_store()
         retriever = HybridRetriever(vector_store=store)
         results = await retriever.retrieve(
-            query=query,
+            query=payload.query,
             kb_id=current_user.kb_id,
-            top_k=top_k,
+            top_k=payload.top_k,
         )
+        if settings.use_reranker:
+            from app.services.rag.reranker import BGEReranker
+            reranker = BGEReranker()
+            results = await reranker.rerank(
+                query=payload.query, results=results, top_k=payload.top_k
+            )
     except Exception as exc:
-        logger.exception("Knowledge search failed for kb_id=%s query=%r: %s", current_user.kb_id, query, exc)
+        logger.exception("Knowledge search failed for kb_id=%s query=%r: %s", current_user.kb_id, payload.query, exc)
         results = []
     return SearchResponse(
         results=[SearchResultItem(**r) for r in results],

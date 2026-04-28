@@ -1,0 +1,127 @@
+task_id: "api-fix-and-supplement-v1"
+title: "修复失败测试 + 补全缺失API端点 + 前端WebSocket实时通信"
+platform: "Backend+Web"
+mode: "standard"
+
+design_decisions:
+  - id: DD1
+    decision: "实现DoraAdapter类，继承LoraAdapter架构并添加magnitude向量和方向归一化"
+    reason: "测试明确要求DoraAdapter拥有magnitude、_effective_weight、param_groups方法，遵循DoRA论文设计"
+
+  - id: DD2
+    decision: "在train_service.py中新增validate_galore_config函数"
+    reason: "测试明确import此函数，必须在train_service.py中定义以匹配import路径"
+
+  - id: DD3
+    decision: "在retriever.py中新增HippoRetriever类，使用PPR(Personalized PageRank)重排序"
+    reason: "测试要求HippoRetriever拥有retrieve方法，PPR是HippoRAG核心算法，适合作为实现"
+
+  - id: DD4
+    decision: "在chat.py新增GET /sessions端点，在ChatService新增list_sessions方法"
+    reason: "前端conversationStore已调用GET /chat/sessions，只需补后端路由，不改前端"
+
+  - id: DD5
+    decision: "前端WebSocket使用useWebSocket hook封装，支持自动重连+降级"
+    reason: "集中管理连接状态，便于ChatPage消费，降低组件复杂度"
+
+file_changes:
+  - path: backend/app/model/lora_adapter.py
+    action: modify
+    desc: >
+      在LoraAdapter类后新增DoraAdapter类(nn.Module)：
+      - __init__: 接收linear、rank、alpha、freeze_base参数
+      - 新增magnitude nn.Parameter(out_features维)，初始化为base_weight逐行范数
+      - _effective_weight(): 返回归一化后的LoRA方向 * magnitude向量
+      - forward(): 使用effective_weight替代原始weight进行F.linear计算
+      - param_groups(): 返回[{name:lora_A, params, lr}, {name:lora_B, params, lr}, {name:magnitude, params, lr}]
+      - base_weight冻结(freeze_base=True时requires_grad=False)
+
+  - path: backend/app/services/train/train_service.py
+    action: modify
+    desc: >
+      在TrainService类外新增validate_galore_config函数：
+      - 输入: config dict
+      - use_galore=False时返回{use_galore: False}
+      - use_galore=True时填充默认值(rank=128, update_proj_gap=200, scale=0.25)
+      - rank<1时raise ValueError
+
+  - path: backend/app/services/rag/retriever.py
+    action: modify
+    desc: >
+      在HybridRetriever类后新增HippoRetriever类：
+      - __init__: 接收vector_store、top_k_candidates参数
+      - retrieve(query, kb_id, top_k, metadata_filter): 调用vector_store.query获取候选，
+        构建PPR图(节点=候选文档, 边=token重叠), 运行PPR迭代得到重排序分数, 返回top_k结果
+      - _build_ppr_graph(): 构建token overlap邻接矩阵
+      - _run_ppr(): 运行PPR迭代(max_iter=10, damping=0.85)
+
+  - path: backend/app/api/v1/chat.py
+    action: modify
+    desc: >
+      新增GET /sessions端点：
+      - 接收page、page_size、status query参数
+      - 调用ChatService.list_sessions(user_id, page, page_size, status)
+      - 返回{conversations: [...], pagination: {...}}
+      - 需JWT认证
+
+  - path: backend/app/services/chat/chat_service.py
+    action: modify
+    desc: >
+      新增list_sessions方法：
+      - 查询ChatSession where user_id=current_user.id
+      - 支持status过滤(active/archived)
+      - 按updated_at降序排序
+      - 支持分页(offset/limit)
+      - 返回(session列表, 总数)
+
+  - path: backend/app/schemas/chat.py
+    action: modify
+    desc: >
+      新增ConversationItem和ConversationListResponse schema：
+      - ConversationItem: id, title, status, created_at, updated_at, message_count
+      - ConversationListResponse: conversations, pagination
+
+  - path: backend/app/main.py
+    action: modify
+    desc: >
+      确保metrics router已注册(之前commit已做,需验证)
+
+interfaces:
+  DoraAdapter:
+    __init__:
+      params: "linear: nn.Linear, rank: int=8, alpha: float=None, freeze_base: bool=True"
+      behavior: "创建lora_A/lora_B/magnitude参数, magnitude初始化为base_weight逐行范数"
+    _effective_weight:
+      return: "torch.Tensor (归一化LoRA方向 * magnitude)"
+    forward:
+      input: "x: torch.Tensor"
+      output: "torch.Tensor (shape=[batch, out_features])"
+    param_groups:
+      input: "base_lr: float"
+      return: "list[dict] with name/lr/params keys"
+
+  validate_galore_config:
+    input: "config: dict"
+    return: "dict with use_galore/rank/update_proj_gap/scale"
+    errors: "ValueError when rank<1"
+
+  HippoRetriever.retrieve:
+    input: "query: str, kb_id: str, top_k: int=10, metadata_filter: dict=None"
+    return: "list[dict] with text/score/metadata keys"
+
+  GET /api/v1/chat/sessions:
+    method: GET
+    auth: JWT required
+    query_params:
+      page: "int, default=1"
+      page_size: "int, default=20, max=100"
+      status: "str, enum=[active,archived,all], default=all"
+    response_200:
+      conversations: "list[ConversationItem]"
+      pagination: "{page, page_size, total, total_pages}"
+
+test_commands:
+  backend_unit: "cd backend && .venv/bin/pytest tests/test_lora_adapter.py tests/test_galore.py tests/test_hippo_retriever.py -v"
+  backend_all: "cd backend && .venv/bin/pytest tests/ -q"
+  frontend: "cd frontend && pnpm test --run"
+  lint: "cd backend && .venv/bin/flake8 app/model/lora_adapter.py app/services/train/train_service.py app/services/rag/retriever.py app/api/v1/chat.py"

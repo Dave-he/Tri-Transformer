@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { getMetricsApi, getTrainingStatusApi } from '@/api/metrics';
+import { getMetricsApi, getTrainingStatusApi } from '@/api/training';
 import type { MetricsState } from '@/types/store';
 
 export const useMetricsStore = create<MetricsState>((set) => ({
