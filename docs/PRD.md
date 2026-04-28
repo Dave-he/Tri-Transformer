@@ -1,8 +1,8 @@
 # 产品需求文档（PRD）：Tri-Transformer 实时多模态可控对话与 RAG 知识库增强系统
 
-**版本**：v2.0  
-**更新日期**：2026-04-03  
-**状态**：研究进展驱动完善版
+**版本**：v2.1  
+**更新日期**：2026-04-28  
+**状态**：研究进展驱动完善版 + Jetson Nano 边缘部署
 
 ---
 
@@ -19,6 +19,7 @@
    - 4.5 RAG 知识库与幻觉控制
    - 4.6 联合训练 Pipeline
    - 4.7 推理与部署
+   - 4.7.2 Jetson Nano 边缘部署方案
 5. [前端产品功能需求](#5-前端产品功能需求)
 6. [后端 API 需求](#6-后端-api-需求)
 7. [评估体系需求](#7-评估体系需求)
@@ -428,6 +429,48 @@
 | INF-10 | 提供 `inference_cli.py`，支持批量推理与流式输出 | P1 |
 | INF-11 | 提供 `demo.py` 快速体验入口 | P1 |
 | INF-12 | 提供 `verify_model.py` 模型健康检查脚本 | P0 |
+
+#### 4.7.2 Jetson Nano 边缘部署方案
+
+**目标**：在 NVIDIA Jetson Nano 8GB 边缘设备上训练和部署 Tri-Transformer 模型，使用 llama.cpp GGUF 量化推理。
+
+**硬件约束**：
+
+| 约束 | 详情 | 影响 |
+|---|---|---|
+| GPU | Maxwell GM20B, 128 CUDA cores, sm_53 | 无 FlashAttention/DeepSpeed/vLLM |
+| CUDA | 10.2 only | PyTorch <= 1.13.x |
+| 内存 | 8GB LPDDR4 共享 CPU+GPU | 约 6GB 可用于 ML |
+| 架构 | aarch64 ARM Cortex-A57 | 多数预编译库不支持 |
+
+**训练适配**：
+
+| 需求 ID | 需求描述 | 优先级 |
+|---|---|---|
+| JN-01 | 自动检测 Jetson Nano 硬件环境，适配训练配置（batch=1, grad_accum=4, GaLore rank=64） | P0 |
+| JN-02 | GaLoreAdamW + AMP(FP16) 内存优化，训练内存 ~1.7GB（325M 轻量配置） | P0 |
+| JN-03 | GradScaler init_scale=1024（Maxwell 无 Tensor Cores，保守缩放） | P0 |
+| JN-04 | 实时共享内存监控，超 85% 使用率 WARNING | P1 |
+| JN-05 | 仅使用轻量配置（d_model=512, ~325M 参数），QWEN3-8B 不可行 | P0 |
+| JN-06 | 提供 install_jetson_deps.sh 一键安装依赖（JetPack PyTorch + llama.cpp） | P1 |
+
+**llama.cpp GGUF 部署**：
+
+| 需求 ID | 需求描述 | 优先级 |
+|---|---|---|
+| LC-01 | 将 O-Transformer Streaming Decoder 权重转换为 GGUF 格式（仅单分支，I/C 非标准结构不转换） | P0 |
+| LC-02 | 支持量化选项：Q4_K_M(~1.5GB), Q5_K_M(~1.8GB), Q8_0(~2.6GB) | P0 |
+| LC-03 | llama.cpp server 在 aarch64 + CUDA 10.2 上编译运行（需 6 处源码 patch） | P1 |
+| LC-04 | LlamaCppService 封装 llama-cpp-python，OpenAI 兼容接口 | P1 |
+| LC-05 | 推理模式切换：pytorch_direct（三分支全功能） / llamacpp_gguf（单分支轻量） | P1 |
+| LC-06 | 提供 convert_to_gguf.py CLI 转换入口 | P1 |
+
+**推荐模型配置**（Jetson Nano 可行）：
+
+| 配置 | 参数量 | FP16 模型 | GaLore训练 | Q5_K_M部署 | 可行? |
+|---|---|---|---|---|---|
+| 默认轻量 (d=512, vocab=151936) | ~325M | 619MB | ~1.7GB | ~1.8GB | ✅ |
+| 紧凑 (d=512, vocab=32000) | ~140M | 268MB | ~1.1GB | ~0.75GB | ✅ |
 
 ---
 

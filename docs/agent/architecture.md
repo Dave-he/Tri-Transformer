@@ -110,3 +110,48 @@ CI 门禁通过 `.github/workflows/eval-ci.yml` 自动触发。
 | GET | `/api/v1/model` | 模型信息 | Yes |
 | POST | `/api/v1/train` | 创建训练任务 | Yes |
 | WS | `/api/v1/model/stream` | 流式输出 | Yes |
+
+## Jetson Nano 边缘部署架构
+
+**Jetson Nano 8GB (Maxwell GPU, CUDA 10.2, aarch64)**
+
+```
+[Jetson Nano 8GB]
+    ├── FastAPI Backend (CPU)
+    │     ├── InferenceService (pytorch_direct)
+    │     │     └── TriTransformerModel.forward() → 三分支全功能推理
+    │     │     ├── 幻觉检测: C-Transformer 实时监控
+    │     │     ├── RAG 检索: ChromaDB + BM25 + BGE Reranker
+    │     │     └── 实时打断: I/O KV-Cache 动态截断
+    │     ├── LlamaCppService (llamacpp_gguf)
+    │     │     └── llama-cpp-python Llama(Q5_K_M.gguf) → 单分支轻量推理
+    │     │     └── 仅 O-Transformer Streaming Decoder (无幻觉检测/控制)
+    │     ├── 推理模式切换: inference_mode 配置
+    │     └── RAG pipeline (ChromaDB + sentence-transformers)
+    ├── Training (GPU + CPU, 共享 8GB 内存)
+    │     ├── JetsonDevice.detect() → 硬件适配
+    │     ├── TriTransformerTrainer(GaLore+AMP+grad_accum)
+    │     ├── MemoryMonitor → 85%阈值 WARNING
+    │     └── 三阶段: LoRA(I+O) → LoRA(C) → 全量(可选)
+    └── CLI Scripts
+        ├── train.py --jetson-nano
+        ├── convert_to_gguf.py
+        ├── install_jetson_deps.sh
+        └── build_llamacpp_jetson.sh
+```
+
+**推理模式对比**：
+
+| 模式 | 架构 | 内存占用 | 功能 | 适用场景 |
+|------|------|---------|------|---------|
+| pytorch_direct | I/C/O 三分支 | ~619MB FP16 | 全功能（幻觉检测+RAG+打断） | 默认推荐 |
+| llamacpp_gguf | O 单分支 | ~1.8GB Q5_K_M | 仅文本生成（无幻觉检测） | 轻量部署 |
+
+**关键硬件限制**：
+
+| 约束 | 影响 | 缓解 |
+|------|------|------|
+| CUDA 10.2 only | PyTorch <=1.13.x, 无 torch.compile | JetPack PyTorch wheel |
+| Maxwell sm_53 | 无 FlashAttention/DeepSpeed/vLLM | 标准注意力 + GaLore |
+| 8GB 共享内存 | CPU+GPU 共用 | GaLore(rank=64) + AMP + 85%监控 |
+| 无 Tensor Cores | AMP 仅节省内存无速度提升 | grad_accum=4 补偿 |

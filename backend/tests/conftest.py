@@ -18,11 +18,6 @@ from app.models.train_job import TrainJob
 DATABASE_URL = "sqlite+aiosqlite:///:memory:"
 
 
-@pytest.fixture(scope="session")
-def event_loop():
-    loop = asyncio.new_event_loop()
-    yield loop
-    loop.close()
 
 
 @pytest_asyncio.fixture(scope="function")

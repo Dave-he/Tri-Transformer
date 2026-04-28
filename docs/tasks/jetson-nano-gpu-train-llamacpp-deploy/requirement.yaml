@@ -1,0 +1,119 @@
+task_id: jetson-nano-gpu-train-llamacpp-deploy
+title: "Jetson Nano 8GB GPU 训练 Tri-Transformer 模型 + llama.cpp 部署"
+version: "1.0"
+created_at: "2026-04-28"
+platform: backend-python
+
+background: |
+  Tri-Transformer 三分支模型（ITransformer/CTransformer/OTransformer）架构完整，训练脚本可在 dummy 模式下运行。
+  现需适配 Jetson Nano 8GB（Maxwell GPU, CUDA 10.2, 128 CUDA cores, 8GB 共享 CPU/GPU 内存）进行本地训练，
+  并使用 llama.cpp 进行推理部署。
+
+  关键硬件限制：
+  - CUDA 10.2 only（PyTorch <= 1.13.x，无 torch.compile/Triton）
+  - Maxwell sm_53（无 FlashAttention/DeepSpeed/vLLM，无 Tensor Cores）
+  - 8GB 共享内存（CPU+GPU 共享，约 6GB 可用于 ML）
+  - aarch64 架构（多数预编译库不支持）
+  - 128 CUDA cores + 低带宽（训练速度慢）
+
+goals:
+  - id: G1
+    description: "适配 Jetson Nano GPU 训练：设备检测、内存优化、训练配置适配"
+  - id: G2
+    description: "llama.cpp GGUF 模型转换与部署推理服务"
+  - id: G3
+    description: "更新需求文档与技术文档，反映 Jetson Nano 训练和 llama.cpp 部署方案"
+  - id: G4
+    description: "FastAPI 后端集成 llama.cpp 推理服务"
+
+functional_requirements:
+  - id: FR1
+    title: "Jetson Nano 训练适配"
+    description: "检测 Jetson Nano 硬件环境，自动选择适配的训练配置"
+    acceptance_criteria:
+      - "detect_jetson_device() 返回 Jetson Nano 设备信息（GPU型号、内存、CUDA版本）"
+      - "当检测到 Jetson Nano 时，自动禁用 FlashAttention/DeepSpeed 相关功能"
+      - "Jetson Nano 训练配置：d_model=512, vocab_size=32000 或 151936（可配置）, batch_size=1, gradient_accumulation_steps=4"
+      - "GaLoreAdamW 优化器默认启用（rank=64, update_proj_gap=200）以节省 ~60% 优化器内存"
+      - "AMP (FP16) 默认启用以节省显存（仅内存效益，无速度提升）"
+      - "GradScaler init_scale=1024（Maxwell 无 Tensor Cores，需保守缩放）"
+      - "训练时实时监控 GPU/CPU 共享内存使用，超 85% 时 WARNING 提示"
+
+  - id: FR2
+    title: "轻量训练配置（Jetson Nano 专用）"
+    description: "提供适配 8GB 共享内存的训练配置方案"
+    acceptance_criteria:
+      - "提供 jetson_nano_config.yaml 预置配置文件"
+      - "默认配置（d=512, vocab=151936）约 325M 参数，FP16 模型 ~619MB，GaLore 训练 ~1.7GB"
+      - "可选紧凑配置（d=512, vocab=32000）约 140M 参数，FP16 模型 ~268MB"
+      - "三阶段训练适配：Stage1 LoRA(I+O)+冻结C, Stage2 LoRA(C)+冻结I+O, Stage3 全量微调（可选，需谨慎监控内存）"
+      - "gradient_accumulation_steps=4 确保有效 batch_size=4 而物理 batch=1"
+
+  - id: FR3
+    title: "PyTorch 模型 → GGUF 转换"
+    description: "将训练好的 Tri-Transformer 模型转换为 llama.cpp GGUF 格式"
+    acceptance_criteria:
+      - "提供 convert_to_gguf.py 转换脚本"
+      - "转换流程：PyTorch .pt → HuggingFace safetensors → GGUF F16 → 量化 GGUF"
+      - "支持 Tri-Transformer 自定义架构的 GGUF 元数据注册（d_model, num_heads, num_kv_heads, rope_theta, etc）"
+      - "支持量化选项：Q4_K_M, Q5_K_M, Q8_0（通过 llama-quantize 工具）"
+      - "325M 模型 Q5_K_M 量化后约 1.8GB，可部署在 Jetson Nano 上"
+
+  - id: FR4
+    title: "llama.cpp 推理服务部署"
+    description: "在 Jetson Nano 上部署 llama.cpp 推理服务并集成到 FastAPI 后端"
+    acceptance_criteria:
+      - "llama.cpp server 在 Jetson Nano (aarch64) 上可编译运行"
+      - "提供 llama_cpp_server.py FastAPI 集成模块（或 llama-cpp-python 绑定）"
+      - "推理 API 支持 /v1/chat/completions 和 /v1/completions OpenAI 兼容接口"
+      - "Tri-Transformer 推理可通过两种路径：1) PyTorch 直接推理（支持三分支全功能）; 2) llama.cpp GGUF 推理（仅 O-Transformer 输出分支，用于轻量部署）"
+      - "推理模式可通过配置切换（pytorch_direct / llamacpp_gguf）"
+
+  - id: FR5
+    title: "Jetson Nano 环境安装脚本"
+    description: "一键安装 Jetson Nano 上运行所需的全部依赖"
+    acceptance_criteria:
+      - "install_jetson_deps.sh 检测 Jetson Nano 硬件并安装 JetPack PyTorch wheel"
+      - "安装 llama.cpp 并编译 aarch64 版本（CPU-only 或 CUDA patch）"
+      - "安装 llama-cpp-python 绑定（aarch64 编译）"
+      - "安装 sentence-transformers / chromadb 等推理依赖"
+      - "脚本执行后 python -c 'import torch; print(torch.cuda.is_available())' 返回 True"
+      - "脚本执行后 llama-server --version 正常输出"
+
+  - id: FR6
+    title: "文档更新（需求文档 + 技术文档）"
+    description: "更新 PRD.md、architecture.md、training_guide.md 等文档，反映 Jetson Nano + llama.cpp 方案"
+    acceptance_criteria:
+      - "PRD.md 新增 §4.7.2 Jetson Nano 部署方案章节"
+      - "architecture.md 新增 Jetson Nano 训练部署架构图"
+      - "training_guide.md 新增 Jetson Nano 训练指南（配置、限制、优化策略）"
+      - "新增 docs/agent/jetson_nano_guide.md Jetson Nano 专用开发指南"
+      - "新增 docs/agent/llamacpp_deployment.md llama.cpp 部署指南"
+
+non_functional_requirements:
+  - id: NFR1
+    description: "Jetson Nano 训练有效 batch_size=4（物理 batch=1, grad_accum=4），单个 epoch 预估 2-4 小时"
+  - id: NFR2
+    description: "GGUF 推理延迟：Q5_K_M 量化 325M 模型首 Token < 2s（Jetson Nano CPU）"
+  - id: NFR3
+    description: "训练期间 GPU/CPU 内存使用不超过 85%（约 6.8GB），留 1.2GB 安全余量"
+  - id: NFR4
+    description: "llama.cpp 编译在 aarch64 + CUDA 10.2 上通过（需 6 处源码 patch）"
+
+out_of_scope:
+  - "QWEN3-8B 全量骨干训练（8.8B 参数需要 16+GB，无法在 8GB 上训练）"
+  - "FlashAttention / DeepSpeed / vLLM 集成（Maxwell GPU 不支持）"
+  - "多 GPU 分布式训练（Jetson Nano 仅单 GPU）"
+  - "音频/视觉模态训练（Phase 2/3，本轮仅文本模态）"
+  - "Tri-Transformer 三分支全架构的 llama.cpp C++ 推理实现（工作量过大，本轮仅转 O-Transformer 单分支）"
+
+quality_gate:
+  min_score: 75
+  checks:
+    - "功能边界显式声明: ✅ 6 个 FR 均有明确 AC"
+    - "异常场景: ✅ 内存超 85% WARNING / CUDA 不可用 fallback CPU / GGUF 转换失败提示"
+    - "接口定义: ✅ detect_jetson_device / convert_to_gguf / llama_cpp_server 方法签名完整"
+    - "验收标准: ✅ 每条 AC 可机器测试或人工验证"
+    - "硬件约束: ✅ Jetson Nano 限制已显式声明（8GB/CUDA10.2/Maxwell）"
+  score: 85
+  verdict: PASS

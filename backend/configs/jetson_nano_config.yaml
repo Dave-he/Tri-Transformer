@@ -1,0 +1,27 @@
+training:
+  job_type: lora_finetune
+  num_epochs: 3
+  learning_rate: 1e-4
+  batch_size: 1
+  seq_len: 64
+  gradient_accumulation_steps: 4
+  use_amp: true
+  device: cuda
+
+model:
+  d_model: 512
+  num_heads: 8
+  num_kv_heads: 2
+  num_layers_i: 4
+  num_layers_c: 4
+  num_layers_o: 4
+  vocab_size: 32000
+  max_len: 64
+
+galore:
+  use_galore: true
+  rank: 64
+  update_proj_gap: 200
+  scale: 0.25
+
+jetson_nano: true

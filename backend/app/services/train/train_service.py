@@ -60,12 +60,23 @@ GALORE_DEFAULTS = {
     "scale": 0.25,
 }
 
+GALORE_JETSON_DEFAULTS = {
+    "rank": 64,
+    "update_proj_gap": 200,
+    "scale": 0.25,
+}
 
-def validate_galore_config(config: dict) -> dict:
+
+def get_galore_defaults(jetson_nano: bool = False) -> dict:
+    return GALORE_JETSON_DEFAULTS if jetson_nano else GALORE_DEFAULTS
+
+
+def validate_galore_config(config: dict, jetson_nano: bool = False) -> dict:
+    defaults = get_galore_defaults(jetson_nano)
     if not config.get("use_galore", False):
         return {"use_galore": False}
     result = {"use_galore": True}
-    for key, default in GALORE_DEFAULTS.items():
+    for key, default in defaults.items():
         result[key] = config.get(key, default)
     rank = result["rank"]
     if rank < 1:

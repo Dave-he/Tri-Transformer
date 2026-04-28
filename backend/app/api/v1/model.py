@@ -6,7 +6,7 @@ from pydantic import BaseModel
 from app.dependencies import get_current_user
 from app.models.user import User
 from app.schemas.model import ModelStatusResponse, ModelLoadRequest, ModelLoadResponse, ModelInfoResponse
-from app.services.model.mock_inference import get_inference_service
+from app.services.inference.adapter import get_inference_service
 from app.services.model.inference_service import InferenceError
 from app.services.model.model_service import get_model_service
 

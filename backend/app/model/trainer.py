@@ -1,5 +1,6 @@
 import os
 import threading
+import logging
 from dataclasses import dataclass
 from typing import Callable, Optional
 
@@ -9,6 +10,10 @@ from torch.optim import AdamW
 from torch.optim.lr_scheduler import OneCycleLR
 
 from app.model.tri_transformer import TriTransformerModel, TriTransformerConfig
+
+logger = logging.getLogger(__name__)
+
+JETSON_MEMORY_LIMIT_PCT = 0.85
 
 
 @dataclass
@@ -25,6 +30,7 @@ class TrainerConfig:
     gradient_accumulation_steps: int = 4
     use_amp: bool = True
     total_steps: Optional[int] = None
+    jetson_nano: bool = False
 
 
 STAGE_MAP = {
@@ -84,9 +90,13 @@ class TriTransformerTrainer:
 
         cuda_available = config.device.startswith("cuda") and torch.cuda.is_available()
         self._use_amp = config.use_amp and cuda_available
-        self.scaler = torch.cuda.amp.GradScaler(enabled=self._use_amp)
+        scaler_init_scale = 1024 if config.jetson_nano else 65536
+        self.scaler = torch.cuda.amp.GradScaler(
+            enabled=self._use_amp, init_scale=scaler_init_scale,
+        )
         self._accum_steps = config.gradient_accumulation_steps
         self._global_step = 0
+        self._jetson_nano = config.jetson_nano
 
     def _freeze_by_stage(self):
         for p in self.model.parameters():
@@ -139,9 +149,20 @@ class TriTransformerTrainer:
 
         return loss.item() * self._accum_steps, grad_norm
 
+    def _check_memory_if_jetson(self):
+        if self._jetson_nano:
+            from app.model.jetson_device import get_memory_usage_pct
+            pct = get_memory_usage_pct()
+            if pct > JETSON_MEMORY_LIMIT_PCT * 100:
+                logger.warning(
+                    "Jetson Nano memory usage %.1f%% exceeds %.0f%% threshold",
+                    pct, JETSON_MEMORY_LIMIT_PCT * 100,
+                )
+
     def train_epoch(self, epoch: int) -> tuple:
         self.model.train()
         self.optimizer.zero_grad()
+        self._check_memory_if_jetson()
         src, tgt_in, tgt_out = self._make_dummy_batch()
         loss, grad_norm = self._compute_loss_and_grad_norm(src, tgt_in, tgt_out, is_accumulation_step=False)
         return loss, grad_norm

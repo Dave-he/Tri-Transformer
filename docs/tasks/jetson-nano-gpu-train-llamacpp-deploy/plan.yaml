@@ -1,0 +1,159 @@
+task_id: jetson-nano-gpu-train-llamacpp-deploy
+version: "1.0"
+created_at: "2026-04-28"
+
+tasks:
+  - id: T1
+    title: "Jetson Nano 硬件检测模块"
+    priority: P0
+    stage: "backend"
+    files:
+      - "backend/app/model/jetson_device.py"
+      - "backend/tests/test_jetson_device.py"
+    test_files:
+      - "backend/tests/test_jetson_device.py"
+    description: |
+      实现 JetsonDeviceInfo 数据类和 detect_jetson_device() 函数。
+      检测 /etc/nv_tegra_release, nvidia-smi, /proc/meminfo。
+      实现 get_memory_usage_pct() 共享内存监控。
+      单元测试覆盖 Jetson 环境和非 Jetson 环境。
+    acceptance_criteria:
+      - "detect_jetson_device() 在 Jetson Nano 返回 is_jetson=True"
+      - "detect_jetson_device() 在非 Jetson 返回 is_jetson=False"
+      - "get_memory_usage_pct() 返回 0-100 之间的浮点数"
+
+  - id: T2
+    title: "TrainerConfig Jetson Nano 适配"
+    priority: P0
+    stage: "backend"
+    files:
+      - "backend/app/model/trainer.py"
+    test_files:
+      - "backend/tests/test_trainer.py"
+    description: |
+      TrainerConfig 新增 jetson_nano: bool 字段。
+      当 jetson_nano=True 时自动设置 GradScaler(init_scale=1024)。
+      train() 中集成内存监控 WARNING（超 85%）。
+    acceptance_criteria:
+      - "TrainerConfig 支持 jetson_nano=True"
+      - "GradScaler init_scale=1024 在 Jetson 模式"
+      - "内存超 85% 时输出 WARNING"
+
+  - id: T3
+    title: "Settings 配置扩展（推理模式 + llama.cpp + Jetson）"
+    priority: P0
+    stage: "backend"
+    files:
+      - "backend/app/core/config.py"
+    description: |
+      新增 inference_mode (pytorch_direct/llamacpp_gguf)。
+      新增 llamacpp_model_path。
+      新增 jetson_memory_limit_pct (默认 0.85)。
+    acceptance_criteria:
+      - "Settings.inference_mode 默认 'pytorch_direct'"
+      - "Settings.llamacpp_model_path 默认 None"
+      - "Settings.jetson_memory_limit_pct 默认 0.85"
+
+  - id: T4
+    title: "GGUF 转换器（O-Transformer → GGUF）"
+    priority: P0
+    stage: "backend"
+    files:
+      - "backend/app/model/gguf_converter.py"
+      - "backend/tests/test_gguf_converter.py"
+    test_files:
+      - "backend/tests/test_gguf_converter.py"
+    description: |
+      实现 GGUFConverter 类，提取 O-Transformer Streaming Decoder 权重，
+      转换为 HuggingFace safetensors 格式，再转换为 GGUF。
+      支持量化选项（Q4_K_M, Q5_K_M, Q8_0）。
+    acceptance_criteria:
+      - "GGUFConverter.extract_o_branch_weights() 正确提取权重"
+      - "GGUFConverter.convert() 生成 F16 GGUF 文件"
+      - "GGUFConverter.quantize() 生成量化 GGUF 文件"
+
+  - id: T5
+    title: "llama.cpp 推理服务封装"
+    priority: P1
+    stage: "backend"
+    files:
+      - "backend/app/services/inference/llama_cpp_service.py"
+      - "backend/tests/test_llama_cpp_service.py"
+    test_files:
+      - "backend/tests/test_llama_cpp_service.py"
+    description: |
+      实现 LlamaCppService，封装 llama-cpp-python 的 Llama 类。
+      提供 generate() 和 chat() 方法。
+      依赖 llama-cpp-python 库（可选依赖，缺失时抛 ImportError）。
+    acceptance_criteria:
+      - "LlamaCppService.generate(prompt) 返回字符串"
+      - "LlamaCppService.chat(messages) 返回字符串"
+      - "llama-cpp-python 缺失时 LlamaCppService 抛 ImportError"
+
+  - id: T6
+    title: "推理模式切换 API"
+    priority: P1
+    stage: "backend"
+    files:
+      - "backend/app/api/v1/model.py"
+    description: |
+      推理端点支持根据 inference_mode 配置切换推理服务。
+      新增 GET /model/inference-mode 和 POST /model/inference-mode 切换接口。
+    acceptance_criteria:
+      - "GET /model/inference-mode 返回当前模式"
+      - "POST /model/inference-mode 切换后推理路由正确"
+
+  - id: T7
+    title: "Jetson Nano 训练配置文件 + CLI 适配"
+    priority: P1
+    stage: "backend"
+    files:
+      - "backend/configs/jetson_nano_config.yaml"
+      - "backend/scripts/train.py"
+      - "backend/app/services/train/train_service.py"
+    description: |
+      创建 jetson_nano_config.yaml 预置配置。
+      train.py 新增 --jetson-nano 和 --galore-rank 参数。
+      train_service.py GaLore defaults 适配 Jetson（rank=64）。
+    acceptance_criteria:
+      - "jetson_nano_config.yaml 包含 batch=1, grad_accum=4, GaLore rank=64"
+      - "train.py --jetson-nano 自动检测并适配"
+      - "GaLore defaults Jetson 模式 rank=64"
+
+  - id: T8
+    title: "Jetson Nano 安装脚本"
+    priority: P1
+    stage: "scripts"
+    files:
+      - "backend/scripts/install_jetson_deps.sh"
+      - "backend/scripts/build_llamacpp_jetson.sh"
+      - "backend/scripts/convert_to_gguf.py"
+    description: |
+      install_jetson_deps.sh: 一键安装 JetPack PyTorch + llama.cpp + llama-cpp-python。
+      build_llamacpp_jetson.sh: llama.cpp aarch64 + CUDA 10.2 编译（含 patch）。
+      convert_to_gguf.py: CLI GGUF 转换入口。
+    acceptance_criteria:
+      - "install_jetson_deps.sh 检测 Jetson 并安装依赖"
+      - "build_llamacpp_jetson.sh 在 Jetson Nano 编译 llama.cpp"
+      - "convert_to_gguf.py --checkpoint PATH --quant Q5_K_M 生成 GGUF"
+
+  - id: T9
+    title: "文档更新（PRD + architecture + 新增指南）"
+    priority: P1
+    stage: "docs"
+    files:
+      - "docs/PRD.md"
+      - "docs/agent/architecture.md"
+      - "docs/agent/jetson_nano_guide.md"
+      - "docs/agent/llamacpp_deployment.md"
+      - "docs/agent/training_guide.md"
+    description: |
+      PRD.md 新增 §4.7.2 Jetson Nano 部署方案。
+      architecture.md 新增 Jetson Nano 架构图。
+      新增 jetson_nano_guide.md 和 llamacpp_deployment.md。
+      training_guide.md 新增 Jetson Nano 训练章节。
+    acceptance_criteria:
+      - "PRD.md 包含 Jetson Nano 部署章节"
+      - "architecture.md 包含 Jetson 架构图"
+      - "jetson_nano_guide.md 完整覆盖环境搭建/训练限制/优化策略"
+      - "llamacpp_deployment.md 完整覆盖转换/量化/部署/集成"

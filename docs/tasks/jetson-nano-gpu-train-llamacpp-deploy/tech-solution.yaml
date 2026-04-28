@@ -1,0 +1,213 @@
+meta:
+  task_id: jetson-nano-gpu-train-llamacpp-deploy
+  title: "Jetson Nano 8GB GPU 训练 Tri-Transformer 模型 + llama.cpp 部署"
+  platform: backend-python
+  version: "1.0"
+  requirement_version: "1.0"
+  created_at: "2026-04-28"
+  risk_level: MEDIUM
+
+design:
+  summary: |
+    适配 Jetson Nano 8GB（Maxwell GPU, CUDA 10.2, 8GB 共享内存）训练 Tri-Transformer 轻量配置模型，
+    并使用 llama.cpp GGUF 量化格式部署推理服务。
+
+    核心策略：
+    1. 训练端：使用默认轻量配置（d_model=512, vocab=151936, ~325M参数），GaLoreAdamW + AMP(FP16) + gradient_accumulation=4
+    2. 部署端：PyTorch 直接推理（保留三分支全功能）为主，llama.cpp GGUF 推理（仅 O-Transformer 单分支）为轻量备选
+    3. GGUF 转换：仅转换 O-Transformer Streaming Decoder 分支（标准 causal decoder 结构），适配 llama.cpp 标准 LLM 转换
+    4. FastAPI 后端：推理模式通过配置切换（pytorch_direct / llamacpp_gguf）
+
+  architecture: |
+    backend/app/model/
+    ├── trainer.py                 [MODIFY] Jetson Nano 训练适配
+    ├── tri_transformer.py         [KEEP] 无需修改
+    ├── branches.py                [KEEP] 无需修改
+    ├── jetson_device.py           [NEW] Jetson Nano 硬件检测与适配
+    ├── gguf_converter.py          [NEW] PyTorch → GGUF 转换器（仅 O-Transformer 分支）
+
+    backend/app/core/
+    ├── config.py                  [MODIFY] 新增 Jetson/llama.cpp 配置项
+
+    backend/app/services/
+    ├── train/train_service.py     [MODIFY] GaLore 适配 Jetson Nano 内存限制
+    ├── inference/llama_cpp_service.py  [NEW] llama.cpp 推理服务封装
+
+    backend/app/api/v1/
+    ├── model.py                   [MODIFY] 推理模式切换（pytorch / llamacpp）
+
+    backend/scripts/
+    ├── train.py                   [MODIFY] 新增 --jetson-nano 参数
+    ├── install_jetson_deps.sh     [NEW] Jetson Nano 一键安装脚本
+    ├── convert_to_gguf.py         [NEW] CLI GGUF 转换入口
+    ├── build_llamacpp_jetson.sh   [NEW] llama.cpp Jetson Nano 编译脚本
+
+    backend/configs/
+    ├── jetson_nano_config.yaml    [NEW] Jetson Nano 训练预置配置
+
+    docs/
+    ├── PRD.md                     [MODIFY] 新增 §4.7.2 Jetson Nano 部署方案
+    ├── agent/architecture.md       [MODIFY] 新增 Jetson Nano 架构图
+    ├── agent/jetson_nano_guide.md  [NEW] Jetson Nano 开发指南
+    ├── agent/llamacpp_deployment.md [NEW] llama.cpp 部署指南
+
+  data_flow: |
+    训练流程:
+      detect_jetson_device() → 配置适配 → TriTransformerTrainer(GaLore+AMP+grad_accum) → checkpoint.pt
+
+    GGUF 转换流程:
+      checkpoint.pt → 提取 O-Transformer 权重 → HuggingFace safetensors 格式 → convert_hf_to_gguf.py → F16.gguf → llama-quantize → Q5_K_M.gguf
+
+    推理流程 (pytorch_direct):
+      FastAPI → InferenceService → TriTransformerModel.forward() → logits → 解码输出
+
+    推理流程 (llamacpp_gguf):
+      FastAPI → LlamaCppService → llama-cpp-python(Llama()) → generate() → 输出
+
+file_changes:
+  - path: "backend/app/model/jetson_device.py"
+    change: add
+    summary: "Jetson Nano 硬件检测：GPU型号/内存/CUDA版本/共享内存监控"
+    risk: low
+
+  - path: "backend/app/model/gguf_converter.py"
+    change: add
+    summary: "O-Transformer → GGUF 转换：提取权重→safetensors→GGUF元数据注册→量化"
+    risk: medium
+
+  - path: "backend/app/model/trainer.py"
+    change: modify
+    summary: "TrainerConfig 新增 jetson_nano 字段；train() 适配 GaLore/Jetson 内存监控；GradScaler init_scale=1024"
+    risk: low
+
+  - path: "backend/app/core/config.py"
+    change: modify
+    summary: "Settings 新增 inference_mode(pytorch_direct/llamacpp_gguf), llamacpp_model_path, jetson_memory_limit_pct"
+    risk: low
+
+  - path: "backend/app/services/inference/llama_cpp_service.py"
+    change: add
+    summary: "LlamaCppService：llama-cpp-python 绑定封装，OpenAI兼容接口"
+    risk: medium
+
+  - path: "backend/app/services/train/train_service.py"
+    change: modify
+    summary: "GaLore defaults 适配 Jetson Nano（rank=64, 更低内存占用）"
+    risk: low
+
+  - path: "backend/app/api/v1/model.py"
+    change: modify
+    summary: "推理端点支持 inference_mode 切换，新增 /model/inference-mode 配置API"
+    risk: low
+
+  - path: "backend/scripts/train.py"
+    change: modify
+    summary: "新增 --jetson-nano 标志（自动检测并适配），--galore-rank 参数"
+    risk: low
+
+  - path: "backend/scripts/install_jetson_deps.sh"
+    change: add
+    summary: "Jetson Nano 依赖安装：JetPack PyTorch wheel + llama.cpp + llama-cpp-python"
+    risk: medium
+
+  - path: "backend/scripts/convert_to_gguf.py"
+    change: add
+    summary: "CLI 入口：checkpoint.pt → GGUF F16 → 量化（Q4_K_M/Q5_K_M/Q8_0）"
+    risk: medium
+
+  - path: "backend/scripts/build_llamacpp_jetson.sh"
+    change: add
+    summary: "llama.cpp 在 Jetson Nano (aarch64 + CUDA 10.2) 编译脚本，含 6 处源码 patch"
+    risk: medium
+
+  - path: "backend/configs/jetson_nano_config.yaml"
+    change: add
+    summary: "Jetson Nano 专用训练配置：d=512, vocab=151936, batch=1, grad_accum=4, GaLore rank=64"
+    risk: low
+
+  - path: "docs/PRD.md"
+    change: modify
+    summary: "新增 §4.7.2 Jetson Nano 部署方案，§4.6.2 新增边缘训练约束"
+    risk: low
+
+  - path: "docs/agent/architecture.md"
+    change: modify
+    summary: "新增 Jetson Nano 训练/部署架构图，推理模式切换图"
+    risk: low
+
+  - path: "docs/agent/jetson_nano_guide.md"
+    change: add
+    summary: "Jetson Nano 环境搭建、训练限制、优化策略、常见问题"
+    risk: low
+
+  - path: "docs/agent/llamacpp_deployment.md"
+    change: add
+    summary: "GGUF 转换流程、量化选择、llama.cpp server 部署、FastAPI 集成"
+    risk: low
+
+  - path: "backend/tests/test_jetson_device.py"
+    change: add
+    summary: "Jetson Nano 硬件检测单元测试（mock subprocess/Jetson环境）"
+    risk: low
+
+  - path: "backend/tests/test_gguf_converter.py"
+    change: add
+    summary: "GGUF 转换器单元测试（权重提取、元数据生成）"
+    risk: low
+
+  - path: "backend/tests/test_llama_cpp_service.py"
+    change: add
+    summary: "LlamaCppService 单元测试（mock llama-cpp-python）"
+    risk: low
+
+implementation_notes:
+  - "jetson_device.py: 通过 subprocess 检测 Jetson Nano（读取 /etc/nv_tegra_release, nvidia-smi, /proc/meminfo）"
+  - "jetson_device.py: detect_jetson_device() 返回 JetsonDeviceInfo(is_jetson, gpu_name, cuda_version, total_memory_gb, is_shared_memory)"
+  - "jetson_device.py: get_memory_usage_pct() 返回当前 CPU+GPU 共享内存使用百分比"
+  - "gguf_converter.py: 仅转换 O-Transformer Streaming Decoder 分支（标准 causal decoder），不转换 I/C 分支（非标准结构 llama.cpp 不支持）"
+  - "gguf_converter.py: 转换流程：1) load checkpoint.pt, 2) extract o_branch streaming_decoder weights, 3) save as HuggingFace format, 4) run convert_hf_to_gguf.py, 5) quantize"
+  - "gguf_converter.py: O-Transformer Streaming Decoder 作为独立 causal LM 转出，GGUF 元数据包含 tri_transformer.o_transformer 标记"
+  - "trainer.py: 当检测到 Jetson Nano 时，自动设置 GradScaler(init_scale=1024)，batch_size=1，grad_accum=4"
+  - "llama_cpp_service.py: 使用 llama-cpp-python 库，Llama(model_path, n_gpu_layers=0) CPU-only 推理"
+  - "llama_cpp_service.py: 提供 generate(prompt, max_tokens) 和 chat(messages) 方法"
+  - "config.py 新增 inference_mode: str = 'pytorch_direct' (可选 'llamacpp_gguf')"
+  - "config.py 新增 llamacpp_model_path: Optional[str] = None"
+  - "config.py 新增 jetson_memory_limit_pct: float = 0.85"
+  - "build_llamacpp_jetson.sh: 需 patch 6 处源码（constexpr/__builtin_assume/bfloat16/CUDA arch/cmath/unistd），目标 arch 50 61"
+  - "install_jetson_deps.sh: 安装 JetPack 4.6 PyTorch wheel (1.10/1.13), 编译 llama.cpp, 安装 llama-cpp-python"
+
+validation:
+  acceptance:
+    - "AC1: detect_jetson_device() 在 Jetson Nano 上返回 is_jetson=True, cuda_version='10.2', total_memory_gb=8.0"
+    - "AC2: detect_jetson_device() 在非 Jetson 环境上返回 is_jetson=False（不误检）"
+    - "AC3: trainer.train() 在 Jetson Nano 模式下使用 GaLoreAdamW + AMP + grad_accum=4"
+    - "AC4: GGUF 转换：checkpoint.pt → Q5_K_M.gguf，文件大小约 1.8GB（325M 参数模型）"
+    - "AC5: LlamaCppService.generate() 返回非空字符串（mock 或真实 llama.cpp）"
+    - "AC6: FastAPI /api/v1/model/infer 切换 inference_mode 后正确路由到对应推理服务"
+    - "AC7: install_jetson_deps.sh 执行后 torch.cuda.is_available() 返回 True（在 Jetson Nano 上）"
+    - "AC8: jetson_nano_config.yaml 被训练脚本正确加载并覆盖默认配置"
+    - "AC9: 内存监控：训练时超 85% 共享内存使用触发 WARNING 日志"
+    - "AC10: pytest test_jetson_device.py test_gguf_converter.py test_llama_cpp_service.py 全部通过"
+  test_command: "cd backend && python -m pytest tests/test_jetson_device.py tests/test_gguf_converter.py tests/test_llama_cpp_service.py -v"
+  lint_command: "cd backend && python -m flake8 app/model/jetson_device.py app/model/gguf_converter.py app/services/inference/llama_cpp_service.py --max-line-length=120"
+
+risks:
+  - id: "R1"
+    description: "llama.cpp 在 aarch64 + CUDA 10.2 编译需 6 处源码 patch，可能随版本更新失效"
+    mitigation: "使用固定版本 llama.cpp (b-4992 或相近), 提供 build_llamacpp_jetson.sh 脚本自动 patch"
+    severity: medium
+
+  - id: "R2"
+    description: "O-Transformer 单分支 GGUF 推理丢失 I/C 分支的幻觉检测和控制能力"
+    mitigation: "llamacpp_gguf 模式仅用于轻量部署场景, 默认推荐 pytorch_direct 模式保留全功能"
+    severity: medium
+
+  - id: "R3"
+    description: "Jetson Nano 8GB 共享内存训练时内存溢出风险"
+    mitigation: "GaLore(rank=64) + AMP + grad_accum=4 + 85%内存阈值 WARNING + 训练配置限制 batch=1"
+    severity: low
+
+  - id: "R4"
+    description: "PyTorch for Jetson 版本限制（<=1.13.x）导致部分现代 API 不可用"
+    mitigation: "使用 torch.cuda.amp (1.6+可用) 替代 torch.amp; 避免 torch.compile; 代码兼容 PyTorch 1.10+"
+    severity: low

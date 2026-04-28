@@ -36,6 +36,10 @@ class Settings(BaseSettings):
     train_lr_default: float = 1e-4
     train_device: str = "cpu"
 
+    inference_mode: str = "pytorch_direct"
+    llamacpp_model_path: Optional[str] = None
+    jetson_memory_limit_pct: float = 0.85
+
     @field_validator("secret_key")
     @classmethod
     def check_secret_key(cls, v: str) -> str:

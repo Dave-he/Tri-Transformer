@@ -7,7 +7,7 @@ from slowapi.errors import RateLimitExceeded
 from slowapi.util import get_remote_address
 from starlette.middleware.base import BaseHTTPMiddleware
 
-from app.api.v1 import auth, knowledge, chat, model, train, stream, webrtc, metrics
+from app.api.v1 import auth, knowledge, chat, model, train, stream, webrtc, metrics, inference
 from app.core.database import create_tables
 from app.core.config import settings
 from app.core.logging import request_logging_middleware
@@ -60,6 +60,7 @@ app.include_router(train.router, prefix="/api/v1/train", tags=["train"])
 app.include_router(stream.router, prefix="/api/v1/model", tags=["stream"])
 app.include_router(webrtc.router, prefix="/api/v1/webrtc", tags=["webrtc"])
 app.include_router(metrics.router, prefix="/api/v1", tags=["metrics"])
+app.include_router(inference.router, prefix="/api/v1/inference", tags=["inference"])
 
 
 @app.get("/health")

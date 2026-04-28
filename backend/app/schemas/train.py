@@ -62,4 +62,13 @@ TRAIN_CONFIG_PRESETS = [
         lora_rank=16,
         lora_alpha=32.0,
     ),
+    TrainConfigPreset(
+        name="jetson_nano",
+        description="Jetson Nano 8GB边缘训练 (batch=1, grad_accum=4, GaLore rank=64)",
+        learning_rate=1e-4,
+        batch_size=1,
+        epochs=3,
+        lora_rank=8,
+        lora_alpha=16.0,
+    ),
 ]

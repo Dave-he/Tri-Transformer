@@ -79,6 +79,17 @@ def _run_training(job_id: str, job_type: str, user_config: dict, db_url: str):
 
     cancel_event = _cancel_events.setdefault(job_id, threading.Event())
 
+    jetson_nano = False
+    try:
+        from app.model.jetson_device import detect_jetson_device
+        info = detect_jetson_device()
+        jetson_nano = info.is_jetson
+    except Exception:
+        pass
+
+    if user_config.get("jetson_nano", False):
+        jetson_nano = True
+
     model_cfg = TriTransformerConfig(
         vocab_size=user_config.get("vocab_size", settings.train_vocab_size),
         d_model=user_config.get("d_model", settings.train_d_model),
@@ -88,14 +99,27 @@ def _run_training(job_id: str, job_type: str, user_config: dict, db_url: str):
         num_layers_o=user_config.get("num_layers", settings.train_num_layers),
         max_len=user_config.get("max_seq_len", settings.train_max_seq_len),
     )
+
+    effective_device = settings.train_device
+    effective_batch = user_config.get("batch_size", 8)
+    effective_grad_accum = user_config.get("gradient_accumulation_steps", 4)
+
+    if jetson_nano:
+        effective_device = "cuda"
+        effective_batch = min(effective_batch, 1)
+        effective_grad_accum = max(effective_grad_accum, 4)
+
     trainer_cfg = TrainerConfig(
         job_type=job_type,
         num_epochs=user_config.get("num_epochs", settings.train_epochs_default),
         learning_rate=user_config.get("learning_rate", settings.train_lr_default),
         vocab_size=model_cfg.vocab_size,
         seq_len=user_config.get("seq_len", 32),
-        device=settings.train_device,
+        device=effective_device,
         model_config=model_cfg,
+        gradient_accumulation_steps=effective_grad_accum,
+        use_amp=jetson_nano or user_config.get("use_amp", True),
+        jetson_nano=jetson_nano,
     )
     metrics_history: list[dict] = []
 
